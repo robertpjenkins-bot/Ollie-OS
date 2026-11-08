@@ -65,6 +65,11 @@ ICONS = {
     "ollie-mouse": (TEAL, '<path d="M84 52 V188 L118 156 L142 206 L166 194 L142 146 H190 Z" stroke-linejoin="round"/>'),
     "ollie-undo-update": (SLATE, '<path d="M86 96 A60 60 0 1 1 74 160"/><path d="M60 70 L86 100 L118 84" stroke-linejoin="round"/>'
                                  '<path d="M128 100 V132 L150 146"/>'),
+    "ollie-school": (ORANGE, '<rect x="58" y="70" width="140" height="124" rx="16"/><line x1="58" y1="106" x2="198" y2="106"/>'
+                             '<line x1="94" y1="56" x2="94" y2="82"/><line x1="162" y1="56" x2="162" y2="82"/>'
+                             f'<circle cx="128" cy="150" r="17"{F}/>'
+                             + "".join(f'<line x1="{128 + 26 * math.cos(a):.1f}" y1="{150 + 26 * math.sin(a):.1f}" x2="{128 + 34 * math.cos(a):.1f}" y2="{150 + 34 * math.sin(a):.1f}" stroke-width="8"/>'
+                                       for a in [i * math.pi / 4 for i in range(8)])),
     "ollie-sticker": (PINK, f'<path d="{star(128, 132, 66, 28)}"/>'),
     "ollie-comic": (MUSTARD, '<path d="M72 80 H184 A20 20 0 0 1 204 100 V148 A20 20 0 0 1 184 168 H120 L88 196 V168 H72 A20 20 0 0 1 52 148 V100 A20 20 0 0 1 72 80 Z"/>'
                              f'<circle cx="100" cy="124" r="9"{F}/><circle cx="128" cy="124" r="9"{F}/><circle cx="156" cy="124" r="9"{F}/>'),

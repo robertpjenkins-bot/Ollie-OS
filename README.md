@@ -25,6 +25,7 @@ playing, making and learning.
 - **Play:** Game Hub (TV mode for controllers), Games (drop in ROMs and ISOs),
   App Center (free games, Epic & GOG, and Ollie's extra apps), Couch Co-op,
   Typing Game, Ollie Pet, Quick Menu, Play Time, Trophies
+- **School:** School Planner (your week, and what to wear for the weather)
 - **Make:** Ollie Paint, Mouse Maker (draw your own mouse pointer), Music Maker, Photo Booth, Comic Maker
 - **Learn:** Coding Quest, Math Quest, Fun Fact of the Day, Ollie's Tour
 - **In the App Center, to install if you want them:** Sticker Maker, Ollie

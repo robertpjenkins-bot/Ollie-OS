@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=School Planner
+Comment=Your school week, and what to wear and pack for the weather
+Exec=/usr/local/bin/ollie-school
+Icon=ollie-school
+Terminal=false
+Categories=Education;
+Keywords=school;planner;schedule;weather;clothes;PE;

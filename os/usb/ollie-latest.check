@@ -8,7 +8,7 @@ here="$(dirname "$(readlink -f "$0")")"
 ok() { echo "OK $*"; }
 
 bad=""
-for a in games finder typing pet coop sticker comic paint mouse animator soundboard codequest space spelling world recovery overlay mathquest appcenter trophies trophy gamehub quickmenu playtime music photobooth seasons tour screensaver easyread language; do
+for a in games finder typing pet coop sticker comic paint mouse school animator soundboard codequest space spelling world recovery overlay mathquest appcenter trophies trophy gamehub quickmenu playtime music photobooth seasons tour screensaver easyread language; do
     f=/usr/local/bin/ollie-$a
     [[ -x $f ]] && bash -n "$f" 2>/dev/null || bad+=" ollie-$a"
 done

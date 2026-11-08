@@ -183,6 +183,7 @@ file_permissions=(
   ["/usr/local/bin/ollie-comic"]="0:0:755"
   ["/usr/local/bin/ollie-paint"]="0:0:755"
   ["/usr/local/bin/ollie-mouse"]="0:0:755"
+  ["/usr/local/bin/ollie-school"]="0:0:755"
   ["/usr/local/bin/ollie-undo-update"]="0:0:755"
   ["/usr/local/lib/ollie/snapshot"]="0:0:755"
   ["/usr/local/lib/ollie/secureboot"]="0:0:755"

@@ -317,7 +317,7 @@ build_publisher
 # Animator, Sound Board, Space Explorer, Spelling Bee and World Explorer in
 # it, to install), the Game Overlay and the secrets. Update Ollie OS opens
 # next to get the packages they use (ffmpeg for GIFs and sounds).
-fun_apps=(games finder typing pet coop sticker comic paint mouse animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime music photobooth tour)
+fun_apps=(games finder typing pet coop sticker comic paint mouse school animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime music photobooth tour)
 fun_pack_files() { # fun_pack_files: its files, into files=()
     local a f
     for a in "${fun_apps[@]}"; do
@@ -343,6 +343,7 @@ fun_pack_files() { # fun_pack_files: its files, into files=()
         usr/local/bin/ollie-{easyread,language,parent,timesup,screen-time} usr/local/share/ollie/{timesup.qml,login-background.png,avatar.png}
         usr/share/sddm/themes/breeze/theme.conf.user etc/xdg/autostart/ollie-screensaver.desktop
         usr/local/bin/ollie-screensaver usr/local/share/ollie/screensaver.qml
+        etc/xdg/autostart/ollie-school-morning.desktop
         usr/share/plasma/plasmoids/org.ollieos.funfact/contents/ui/{main.qml,facts.js})
 }
 # Not part of Ollie OS any more: the robot voice (ollie-say, Read aloud),

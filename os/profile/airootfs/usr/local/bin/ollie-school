@@ -1,0 +1,31 @@
+#!/bin/bash
+# School Planner: your school week, and with the weather, what to wear and
+# pack (school.qml). What you put in is kept in ~/.config/ollie/school.json.
+#   ollie-school            the window
+#   ollie-school --morning  the reminder (at login, once a day, if switched on
+#                           in the planner): a notification with what to wear
+export QT_FORCE_STDERR_LOGGING=1 QT_MESSAGE_PATTERN='%{message}' QT_LOGGING_RULES='qml.debug=true;js.debug=true;default.debug=true'
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/ollie"
+data="$conf/school.json"
+mkdir -p "$conf"
+args=("data=$(head -c 200000 "$data" 2>/dev/null | tr -d '\n')")
+if [[ ${1:-} == --morning ]]; then
+    [[ -s $data ]] || exit 0 # never set up: no reminder
+    stamp="${XDG_CACHE_HOME:-$HOME/.cache}/ollie/school-reminded"
+    mkdir -p "$(dirname "$stamp")"
+    [[ "$(cat "$stamp" 2>/dev/null)" == "$(date +%F)" ]] && exit 0
+    date +%F >"$stamp"
+    args+=(morning=1)
+fi
+while IFS= read -r line; do
+    case "$line" in
+    *"OLLIE-ACTION save "*)
+        tmp="$(mktemp "$conf/.school.XXXXXX")" &&
+            printf '%s\n' "${line#*OLLIE-ACTION save }" >"$tmp" && mv -f "$tmp" "$data"
+        ;;
+    *"OLLIE-ACTION notify "*)
+        msg="${line#*OLLIE-ACTION notify }"
+        notify-send -a "School Planner" -i ollie-school "${msg%%|*}" "${msg#*|}" >/dev/null 2>&1
+        ;;
+    esac
+done < <(qml6 /usr/local/share/ollie/school.qml -- "${args[@]}" 2>&1)

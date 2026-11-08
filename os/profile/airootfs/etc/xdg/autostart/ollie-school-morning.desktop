@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=School Planner (morning reminder)
+Exec=/usr/local/bin/ollie-school --morning
+Icon=ollie-school
+Terminal=false
+NoDisplay=true
+X-KDE-autostart-phase=2

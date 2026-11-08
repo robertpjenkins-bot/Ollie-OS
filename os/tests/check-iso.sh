@@ -154,7 +154,7 @@ check "Update Checker in the menu" test -f "$r/usr/share/applications/ollie-upda
 check "the list of the latest updates" test -s "$r/usr/local/share/ollie/updates.qml"
 check "Update Checker is asked about at the first start (off until then)" bash -c "! test -e '$r/etc/systemd/user/timers.target.wants/ollie-update-checker.timer' && grep -q update-checker '$r/usr/local/bin/ollie-welcome'"
 check "python for the Update Checker" test -x "$r/usr/bin/python3"
-for f in games finder typing pet coop sticker comic paint mouse animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime music photobooth tour screensaver; do
+for f in games finder typing pet coop sticker comic paint mouse school animator soundboard codequest space spelling world mathquest appcenter trophies gamehub quickmenu playtime music photobooth tour screensaver; do
     check "/usr/local/bin/ollie-$f is executable" test -x "$r/usr/local/bin/ollie-$f"
     check "$f window" test -s "$r/usr/local/share/ollie/$f.qml"
 done
