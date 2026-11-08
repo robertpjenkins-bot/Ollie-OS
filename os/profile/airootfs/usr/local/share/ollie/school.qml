@@ -40,7 +40,12 @@ ApplicationWindow {
     property string weatherNote: ""
     property int changes: 0           // so bindings see a changed plan
     function save() { changes++; saveTimer.restart(); }
-    Timer { id: saveTimer; interval: 400; onTriggered: console.log("OLLIE-ACTION save " + JSON.stringify(win.plan)) }
+    function saveNow() { saveTimer.stop(); console.log("OLLIE-ACTION save " + JSON.stringify(win.plan)); }
+    Timer { id: saveTimer; interval: 400; onTriggered: win.saveNow() }
+    onClosing: if (saveTimer.running) saveNow() // a change just before closing is kept too
+    property string savedNote: ""
+    Timer { id: savedNoteTimer; interval: 4000; onTriggered: win.savedNote = "" }
+    function pressSave(text) { saveNow(); savedNote = text || "Saved."; savedNoteTimer.restart(); }
 
     readonly property var dayNames: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
     readonly property var weekOrder: [1, 2, 3, 4, 5, 6, 0]
@@ -531,7 +536,14 @@ ApplicationWindow {
                 ColumnLayout {
                     anchors.fill: parent; anchors.margins: 24
                     spacing: 14
-                    Label { text: "Add what you do each day. The planner tells you what you need."; color: win.ink; font.pixelSize: 17 }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 14
+                        Label { text: "Add what you do each day. The planner tells you what you need."; color: win.ink; font.pixelSize: 17 }
+                        Item { Layout.fillWidth: true }
+                        Label { text: win.savedNote; color: "#4F8A45"; font.pixelSize: 16; font.bold: true }
+                        Btn { text: "Save"; strong: true; implicitWidth: 120; onClicked: win.pressSave("Saved.") }
+                    }
                     RowLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -628,7 +640,7 @@ ApplicationWindow {
                                         win.plan.town = modelData.name + (modelData.admin1 ? ", " + modelData.admin1 : "");
                                         win.plan.lat = modelData.latitude; win.plan.lon = modelData.longitude;
                                         places.found = []; places.text = ""; townField.text = "";
-                                        win.save(); win.loadWeather(); win.page = 0;
+                                        win.loadWeather(); win.pressSave("Saved: " + win.plan.town); win.changes++;
                                     }
                                 }
                             }
@@ -664,7 +676,31 @@ ApplicationWindow {
                             Item { Layout.fillWidth: true }
                         }
                     }
-                    Label { text: "Weather by Open-Meteo.com"; color: win.soft; font.pixelSize: 12 }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 14
+                        Label { text: "Weather by Open-Meteo.com"; color: win.soft; font.pixelSize: 12 }
+                        Item { Layout.fillWidth: true }
+                        Label { text: win.savedNote; color: "#4F8A45"; font.pixelSize: 16; font.bold: true }
+                        Btn {
+                            text: "Save"; strong: true; implicitWidth: 120
+                            onClicked: {
+                                const typed = townField.text.trim();
+                                if (!typed) { win.pressSave("Saved."); return; }
+                                // A town typed but not clicked: the best one for it.
+                                win.savedNote = "Looking for " + typed + "...";
+                                win.findTown(typed, function (found, error) {
+                                    if (!found.length) { win.savedNote = ""; places.text = error || "No town called that. Type only the town's name, like Springfield, or its ZIP code."; return; }
+                                    const t = found[0];
+                                    win.plan.town = t.name + (t.admin1 ? ", " + t.admin1 : "");
+                                    win.plan.lat = t.latitude; win.plan.lon = t.longitude;
+                                    places.found = []; places.text = ""; townField.text = "";
+                                    win.changes++; win.loadWeather();
+                                    win.pressSave("Saved: " + win.plan.town);
+                                });
+                            }
+                        }
+                    }
                     Item { Layout.fillHeight: true }
                 }
             }

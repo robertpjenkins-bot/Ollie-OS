@@ -45,5 +45,5 @@ for p in ffmpeg btrfs-progs rsync arch-install-scripts; do pacman -Q "$p" >/dev/
 if [[ -z $missing ]]; then ok "GIF and sound making, and Recovery Mode's tools are installed"; else echo "LATER Update Ollie OS adds:$missing"; fi
 [[ ! -e /usr/local/bin/ollie-say && ! -e /usr/local/bin/ollie-readaloud ]] && ok "No robot voice"
 [[ -f /usr/local/share/ollie/store/ollie-sticker.desktop ]] && ok "Sticker Maker, Spelling Bee, Animator, Sound Board, World and Space Explorer are in the App Center"
-[[ "$(cat /etc/ollie-version 2>/dev/null)" == 1.6 ]] && ok "This is Ollie OS 1.6"
+[[ "$(cat /etc/ollie-version 2>/dev/null)" == 1.7 ]] && ok "This is Ollie OS 1.7"
 exit 0

@@ -1,4 +1,4 @@
-![Ollie OS 1.6](docs/ollie-os-banner.png)
+![Ollie OS 1.7](docs/ollie-os-banner.png)
 
 # Oliver DEMO AVAILABLE
 Ollie OS was dreamed up, designed and tested by an 8-year-old, built with help from AI (Claude). Great for gaming: comes with Wine, Steam and more, plus a debugger and a driver installer. Easy to install KID FREINDLY WITH UPDATE VERSION 1.3
@@ -7,7 +7,7 @@ Ollie OS was dreamed up, designed and tested by an 8-year-old, built with help f
 IF mac says will not let you open go to settings privacy gatekepper press lock and go to allow
 <img width="1600" height="520" alt="image-1793888644930" src="https://github.com/user-attachments/assets/a233df66-32a0-46fd-aecb-8cbe7632bc3f" />
 
-## Ollie OS 1.6
+## Ollie OS 1.7
 
 **The fun gaming computer, made by biobro.** Ollie OS is built on Arch Linux
 and starts straight into a colourful desktop with Steam (and its big-screen

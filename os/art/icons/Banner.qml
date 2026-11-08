@@ -29,7 +29,7 @@ Window {
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
                 width: v.width + 36; height: 64; radius: 8; color: "#D9A021"
-                Text { id: v; anchors.centerIn: parent; text: "1.6"; font.pixelSize: 40; font.bold: true; color: "#22252B" }
+                Text { id: v; anchors.centerIn: parent; text: "1.7"; font.pixelSize: 40; font.bold: true; color: "#22252B" }
             }
         }
         Text { text: "The fun gaming computer, made by biobro"; color: "#F4EFE6"; font.family: "Noto Serif"; font.pixelSize: 40 }

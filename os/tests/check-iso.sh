@@ -177,7 +177,7 @@ check "World Explorer's map" python3 -c "import json,sys; assert len(json.load(o
 check "No robot voice (ollie-say and Read aloud are gone)" bash -c "! test -e '$r/usr/local/bin/ollie-say' && ! test -e '$r/usr/local/bin/ollie-readaloud'"
 check "the in-game overlay switch" test -x "$r/usr/local/bin/ollie-overlay"
 check "ffmpeg for the Animator and the Sound Board" test -x "$r/usr/bin/ffmpeg"
-check "Ollie OS version 1.6" grep -qx "1.6" "$r/etc/ollie-version"
+check "Ollie OS version 1.7" grep -qx "1.7" "$r/etc/ollie-version"
 check "the colourful app icons" test -s "$r/usr/share/icons/hicolor/256x256/apps/ollie-games.png"
 check "the controller helper and Play Time start with the desktop" bash -c "test -L '$r/etc/systemd/user/default.target.wants/ollie-padd.service' && test -L '$r/etc/systemd/user/default.target.wants/ollie-playtime.service' && test -x '$r/usr/local/lib/ollie/padd.py'"
 check "the controller as a mouse may make its mouse (uinput)" bash -c "grep -q uinput '$r/etc/udev/rules.d/71-ollie-controllers.rules' && test -s '$r/etc/modules-load.d/ollie-uinput.conf'"

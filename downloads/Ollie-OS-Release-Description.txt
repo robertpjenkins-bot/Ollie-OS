@@ -1,22 +1,29 @@
-## Ollie OS 1.6
+## Ollie OS 1.7
 
 Made by biobro (age 8). A gaming computer built on Arch Linux, with Steam, Minecraft, retro games and Ollie's own apps.
 
 ![Ollie OS](https://raw.githubusercontent.com/robertpjenkins-bot/Ollie-OS/claude/fervent-gates-cs7smv/docs/ollie-os-showcase.jpg)
 
-### What's new
-- **Install Windows too.** The installer asks if you want Windows. Say yes, pick Windows 10 or Windows 11, and Ollie OS gets it ready. Windows Setup runs on the next start, and after that the start-up menu lets you pick Ollie OS or Windows.
-- **No more robot voice.** Ollie doesn't talk anymore, and Read aloud is gone too.
-- **Pick your own apps.** Sticker Maker, Spelling Bee, Ollie Animator, Sound Board, World Explorer and Space Explorer have moved to the App Center. Install the ones you want with one click.
+### What's new in 1.7
+- **Works with Secure Boot.** No more turning Secure Boot off in the BIOS. The first time, a blue screen says "Verification failed": press Enter, then any key quickly, then **Enroll key from disk → OLLIE_OS → OLLIE-OS-KEY.cer → Continue → Yes → Reboot**. Only once on each computer.
+- **School Planner.** Put in your week (P.E., swimming, music, library...) and your town, then press **Save**. Every day it checks the weather and tells you what to wear and pack: rain boots and a raincoat when it rains, sneakers and socks for P.E. (in your bag if it's a rain-boots day). It finds your town even if it's spelt a bit wrong, and can remind you when you log in.
+- **Undo an update.** Ollie OS saves itself before every update. If an update breaks something, pick "Ollie OS as it was on ..." on the start-up menu, or open **Undo an update**, and it goes back. Your files, games and saves stay.
 - **Ollie Paint.** A drawing app for the mouse: brush, pencil, eraser, fill bucket, lines, rectangles and circles, lots of colours, undo, and Save. Your drawings go in Pictures → Drawings. It's on the Welcome screen as **Draw**.
 - **Mouse Maker.** Draw your own mouse pointer, square by square, try it out, and press **Use this mouse** to make it the computer's real pointer. **Back to the normal mouse** puts the old one back. It's on the Welcome screen as **My own mouse**.
-- **School Planner.** Put in your week (P.E., swimming, music, library...) and your town. Every day it checks the weather and tells you what to wear and pack: rain boots and a raincoat when it rains, sneakers and socks for P.E. (in your bag if it's a rain-boots day). It can remind you when you log in.
-- **Undo an update.** Ollie OS saves itself before every update. If an update breaks something, pick "Ollie OS as it was on ..." on the start-up menu, or open **Undo an update**, and it goes back. Your files, games and saves stay.
-- **Works with Secure Boot.** No more turning Secure Boot off in the BIOS. The first time, a blue screen says "Verification failed": press Enter, then any key quickly, then **Enroll key from disk → OLLIE_OS → OLLIE-OS-KEY.cer → Continue → Yes → Reboot**. Only once on each computer.
-- **New look.** Cleaner apps: real icons instead of emoji, shorter text, and each app has its own style.
+
+### Also new since 1.5
+- **Install Windows too:** the installer asks if you want Windows 10 or 11 next to Ollie OS.
+- **No more robot voice.**
+- **Pick your own apps:** Sticker Maker, Spelling Bee, Ollie Animator, Sound Board, World Explorer and Space Explorer are in the App Center.
+- **New look:** real icons instead of emoji, shorter text, each app with its own style.
+
+### Downloads
+- **Ollie-OS-Installers-Windows-Mac.zip**: the **Windows** installer (.exe) and the **Mac** installer (.dmg)
+- **Ollie-OS-Installer-x86_64.AppImage**: the **Linux / Steam Deck** installer
+- **Ollie-OS-Latest-Updater-x86_64.AppImage**: the **updater**, for a computer that already has Ollie OS
 
 ### How to install
-1. Download the installer for your computer: **Windows** (.exe), **Mac** (.dmg) or **Linux / Steam Deck** (.AppImage).
+1. Download the installer for your computer: **Windows** or **Mac** (both in the zip) or **Linux / Steam Deck** (.AppImage).
 2. Open it. It downloads Arch Linux, turns it into Ollie OS and writes it to a USB drive. No sign-in needed.
 3. Start the computer from the USB drive and press **Install Ollie OS**.
    - Steam Deck: hold Volume Down
