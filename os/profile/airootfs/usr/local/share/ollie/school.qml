@@ -84,16 +84,100 @@ ApplicationWindow {
     }
 
     // --- The weather ---
-    function getJSON(url, done) {
+    function getJSON(url, done) { // done(json or null, HTTP status: 0 = no connection)
         const x = new XMLHttpRequest();
         x.onreadystatechange = function () {
             if (x.readyState !== XMLHttpRequest.DONE) return;
             let j = null;
             try { j = JSON.parse(x.responseText); } catch (e) { j = null; }
-            done(j);
+            done(j, x.status);
         };
         x.open("GET", url);
         x.send();
+    }
+
+    // --- Finding your town ---
+    // The town service knows place names only: "Seattle, WA" or "Seattle
+    // Washington" find nothing. So the name is searched (dropping words from the
+    // end until something is found), and the rest picks among the places found.
+    readonly property var usStates: ({ AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado",
+        CT: "Connecticut", DE: "Delaware", DC: "District of Columbia", FL: "Florida", GA: "Georgia", HI: "Hawaii", ID: "Idaho",
+        IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky", LA: "Louisiana", ME: "Maine", MD: "Maryland",
+        MA: "Massachusetts", MI: "Michigan", MN: "Minnesota", MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska",
+        NV: "Nevada", NH: "New Hampshire", NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina",
+        ND: "North Dakota", OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
+        SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia", WA: "Washington",
+        WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming" })
+    // Town names to fix spelling slips with ("sacreamento" is Sacramento):
+    // state capitals, big towns, and a few cities in other countries.
+    readonly property var knownTowns: "Montgomery|Juneau|Phoenix|Little Rock|Sacramento|Denver|Hartford|Dover|Tallahassee|Atlanta|Honolulu|Boise|Springfield|Indianapolis|Des Moines|Topeka|Frankfort|Baton Rouge|Augusta|Annapolis|Boston|Lansing|Saint Paul|Jackson|Jefferson City|Helena|Lincoln|Carson City|Concord|Trenton|Santa Fe|Albany|Raleigh|Bismarck|Columbus|Oklahoma City|Salem|Harrisburg|Providence|Columbia|Pierre|Nashville|Austin|Salt Lake City|Montpelier|Richmond|Olympia|Charleston|Madison|Cheyenne|New York|Los Angeles|Chicago|Houston|Philadelphia|San Antonio|San Diego|Dallas|San Jose|Jacksonville|Fort Worth|Charlotte|San Francisco|Seattle|Washington|El Paso|Detroit|Memphis|Portland|Louisville|Baltimore|Milwaukee|Albuquerque|Tucson|Fresno|Mesa|Kansas City|Omaha|Colorado Springs|Miami|Long Beach|Virginia Beach|Oakland|Minneapolis|Tulsa|Tampa|Arlington|New Orleans|Wichita|Bakersfield|Cleveland|Aurora|Anaheim|Riverside|Santa Ana|Corpus Christi|Lexington|Henderson|Stockton|Pittsburgh|Saint Louis|Cincinnati|Anchorage|Greensboro|Plano|Newark|Toledo|Orlando|Chula Vista|Irvine|Fort Wayne|Jersey City|Durham|Laredo|Buffalo|Gilbert|Glendale|Reno|Chandler|Scottsdale|Norfolk|Fremont|Spokane|Modesto|Fontana|Moreno Valley|Santa Clarita|Oxnard|Huntington Beach|Elk Grove|Roseville|Folsom|Davis|Rancho Cordova|Citrus Heights|Vacaville|Santa Rosa|Berkeley|Palo Alto|Pasadena|Sunnyvale|Santa Barbara|Salinas|Visalia|Redding|Chico|Eureka|San Bernardino|Ontario|Torrance|Burbank|Santa Monica|Escondido|Oceanside|Carlsbad|Temecula|Palm Springs|Lodi|Merced|Tracy|Manteca|Petaluma|Napa|Hayward|Walnut Creek|Livermore|Pleasanton|Grand Rapids|Ann Arbor|Rochester|Syracuse|Knoxville|Chattanooga|Birmingham|Savannah|Provo|Ogden|Flagstaff|Yuma|Las Vegas|Eugene|Tacoma|Bellevue|Everett|Vancouver|Boulder|Fort Collins|Lubbock|Amarillo|Waco|McAllen|Brownsville|Fargo|Sioux Falls|Billings|Missoula|Bozeman|Burlington|Manchester|Worcester|Cambridge|Stamford|New Haven|Wilmington|Allentown|Erie|Akron|Dayton|Evansville|Peoria|Rockford|Green Bay|Duluth|Shreveport|Mobile|Huntsville|Fayetteville|Orange|Irving|Garland|Hialeah|Lakeland|Clearwater|Gainesville|Pensacola|Naples|Asheville|Greenville|Myrtle Beach|Toronto|Montreal|Ottawa|Calgary|Edmonton|London|Paris|Berlin|Madrid|Rome|Dublin|Sydney|Melbourne|Auckland|Mexico City|Tokyo".split("|")
+    function distance(a, b) { // how many letters to change to get from a to b
+        const d = [];
+        for (let i = 0; i <= a.length; i++) d.push([i]);
+        for (let j = 1; j <= b.length; j++) d[0][j] = j;
+        for (let i = 1; i <= a.length; i++)
+            for (let j = 1; j <= b.length; j++)
+                d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        return d[a.length][b.length];
+    }
+    function closest(word, list) { // the name in list nearest to word: 1 or 2 letters wrong at most
+        const w = word.toLowerCase(), most = w.length <= 4 ? 1 : 2;
+        let best = "", bestD = most + 1;
+        for (let i = 0; i < list.length; i++) {
+            const dd = distance(w, list[i].toLowerCase());
+            if (dd < bestD) { best = list[i]; bestD = dd; }
+        }
+        return best;
+    }
+    function searchPlaces(name, done) { // done(results, error text)
+        const test = arg("places"); // tests: a folder with NAME.json files
+        const url = test ? test + "/" + encodeURIComponent(name.toLowerCase()) + ".json"
+            : "https://geocoding-api.open-meteo.com/v1/search?count=10&language=en&format=json&name=" + encodeURIComponent(name);
+        getJSON(url, function (j, status) {
+            if (j) done(j.results || [], "");
+            else if (test) done([], "");
+            else if (!status) done([], "Can't reach the town finder. Is the internet on?");
+            else done([], "The town finder isn't working right now (error " + status + "). Try again later.");
+        });
+    }
+    function rankPlaces(found, hint) {
+        hint = hint.replace(/[.,]/g, " ").trim();
+        if (!hint) return found;
+        const words = [hint.toLowerCase()];
+        if (usStates[hint.toUpperCase()]) words.push(usStates[hint.toUpperCase()].toLowerCase());
+        else if (hint.length >= 4) { // a state, maybe spelt a bit wrong ("calinfonia")
+            const st = closest(hint, Object.keys(usStates).map(k => usStates[k]));
+            if (st) words.push(st.toLowerCase());
+        }
+        const fits = r => [r.admin1, r.admin2, r.country, r.country_code].some(v => v && words.some(w => v.toLowerCase() === w || v.toLowerCase().indexOf(w) === 0));
+        const good = found.filter(fits);
+        return good.concat(found.filter(r => !fits(r)));
+    }
+    function findTown(text, done) { // done(places, error text, the name used if it was spelt differently)
+        text = text.trim();
+        const comma = text.indexOf(",");
+        let name = comma < 0 ? text : text.substring(0, comma).trim(), hint = comma < 0 ? "" : text.substring(comma + 1).trim();
+        const fixed = {};
+        const step = function () {
+            searchPlaces(name, function (found, error) {
+                if (error) return done([], error, "");
+                if (found.length) return done(rankPlaces(found, hint), "", fixed[name] ? name : "");
+                // Not found: a spelling slip? Then the word or two before the state?
+                const better = closest(name, knownTowns);
+                if (better && better.toLowerCase() !== name.toLowerCase() && !fixed[better]) {
+                    fixed[better] = true;
+                    name = better;
+                    return step();
+                }
+                const words = name.split(/\s+/);
+                if (words.length < 2) return done([], "", "");
+                hint = (words.pop() + " " + hint).trim();
+                name = words.join(" ");
+                step();
+            });
+        };
+        if (name.length < 2) return done([], "", "");
+        step();
     }
     function loadWeather() {
         if (!arg("weather") && !plan.town) { forecast = null; weatherNote = "Pick your town in Settings to see the weather."; weatherDone(); return; }
@@ -513,7 +597,7 @@ ApplicationWindow {
                                 TextField {
                                     id: townField
                                     Layout.preferredWidth: 360
-                                    placeholderText: "Town or city"
+                                    placeholderText: "Town, like Seattle or Seattle, WA"
                                     font.pixelSize: 16
                                     color: win.ink
                                     implicitHeight: 40; leftPadding: 10
@@ -526,10 +610,10 @@ ApplicationWindow {
                                         if (!townField.text.trim()) return;
                                         places.text = "Looking...";
                                         places.found = [];
-                                        const url = win.arg("places") || ("https://geocoding-api.open-meteo.com/v1/search?count=6&language=en&format=json&name=" + encodeURIComponent(townField.text.trim()));
-                                        win.getJSON(url, function (j) {
-                                            places.found = (j && j.results) || [];
-                                            places.text = j ? (places.found.length ? "Which one?" : "No town with that name.") : "No internet?";
+                                        win.findTown(townField.text, function (found, error, spelt) {
+                                            places.found = found.slice(0, 8);
+                                            places.text = error || (found.length ? (spelt ? "Did you mean " + spelt + "? " : "") + "Which one? Click your town."
+                                                : "No town called that. Type only the town's name, like Springfield, or its ZIP code.");
                                         });
                                     }
                                 }
