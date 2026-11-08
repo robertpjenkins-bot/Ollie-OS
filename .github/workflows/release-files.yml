@@ -1,0 +1,44 @@
+# Put the newest downloads on a GitHub release (Ollie OS v1.7 and later):
+# when downloads/release.json changes, its "upload" files go on the release
+# named by "tag" (replacing files of the same name), its "remove" files come
+# off it, and the release's text becomes the "notes" file.
+name: Release files
+
+on:
+  push:
+    paths:
+      - "downloads/release.json"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-files
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cfg=downloads/release.json
+          tag="$(jq -r .tag "$cfg")"
+          gh release view "$tag" --json tagName >/dev/null
+          mapfile -t files < <(jq -r '.upload[]' "$cfg")
+          for f in "${files[@]}"; do test -s "$f" || { echo "missing: $f"; exit 1; }; done
+          gh release upload "$tag" "${files[@]}" --clobber
+          jq -r '.remove[]?' "$cfg" | while read -r name; do
+            gh release delete-asset "$tag" "$name" --yes 2>/dev/null && echo "removed $name" || echo "(no $name)"
+          done
+          notes="$(jq -r '.notes // empty' "$cfg")"
+          title="$(jq -r '.title // empty' "$cfg")"
+          args=()
+          [[ -n $notes ]] && args+=(--notes-file "$notes")
+          [[ -n $title ]] && args+=(--title "$title")
+          ((${#args[@]})) && gh release edit "$tag" "${args[@]}"
+          gh release view "$tag" --json assets --jq '.assets[] | "\(.name)  \(.size)"'

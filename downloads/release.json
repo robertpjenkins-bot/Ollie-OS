@@ -1,0 +1,16 @@
+{
+  "tag": "ollieosv1.7",
+  "title": "Ollie-OS v1.7",
+  "notes": "downloads/Ollie-OS-Release-Description.txt",
+  "upload": [
+    "downloads/Ollie-OS-Installers-Windows-Mac.zip",
+    "downloads/Ollie-OS-Installer-x86_64.AppImage",
+    "downloads/Ollie-OS-Latest-Updater-x86_64.AppImage",
+    "downloads/Ollie-OS-Installer-Windows.exe",
+    "downloads/Ollie-OS-Installer-Mac.dmg"
+  ],
+  "remove": [
+    "Ollie-OS-Installer-x86_64.14.AppImage",
+    "Ollie-OS-Latest-Updater-x86_64.4.AppImage"
+  ]
+}
