@@ -1,0 +1,39 @@
+# Checks each recommendation ("Idea: ..." issue) as soon as it is sent or
+# changed. If it has a link, an email, a phone number, an address or a rude
+# word, it gets the "hidden" label, so the website's Recommendations tab
+# (docs/index.html) does not show it. biobro can take the label off to show it.
+# Ideas from biobro and helpers on the repo are not checked.
+name: Check recommendations
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/scripts
+      - name: Check it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+          WHO: ${{ github.event.issue.author_association }}
+          TITLE: ${{ github.event.issue.title }}
+          BODY: ${{ github.event.issue.body }}
+        run: |
+          # Same test the website uses for "is this a recommendation".
+          printf '%s\n' "$TITLE" | grep -Eqi '^[[:space:]]*idea[[:space:]]*[:-]' || { echo "Not an idea"; exit 0; }
+          case "$WHO" in OWNER|MEMBER|COLLABORATOR) echo "From the repo's own people: not checked"; exit 0;; esac
+          why=$(.github/scripts/idea-check.sh)
+          if [ -z "$why" ]; then echo "Looks fine: shown on the website"; exit 0; fi
+          echo "Hiding #$NUMBER: $why"
+          gh issue edit "$NUMBER" --add-label hidden
+          gh issue comment "$NUMBER" --body "Thanks for the idea! It is hidden from the Ollie OS website for now because $why. Please don't put links or anything about yourself (like where you live) in ideas. Ollie OS's maker will look at it."
