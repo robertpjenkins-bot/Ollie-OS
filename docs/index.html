@@ -178,6 +178,23 @@
   details[open] summary::before { content: "−"; background: var(--orange); }
   details p { margin: 0 0 16px 36px; color: var(--muted); }
 
+  /* Recommendations: GitHub issues whose title starts with "Idea:" */
+  .ideas-top { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  .btn.dark { background: var(--ink); color: #fff; }
+  .btn.dark:hover { background: #000; }
+  .ideas-note { text-align: center; color: var(--muted); font-size: 15px; margin: 0 0 34px; }
+  .ideas { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+  .idea { background: var(--white); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; display: flex; flex-direction: column; gap: 8px; }
+  .idea h3 { margin: 0; font-size: 20px; }
+  .idea p { margin: 0; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
+  .idea .meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: auto; padding-top: 8px; font-size: 14px; color: var(--muted); }
+  .idea .meta a { color: var(--muted); }
+  .pill { font-size: 12px; font-weight: 800; letter-spacing: .5px; padding: 3px 10px; border-radius: 999px; background: var(--paper2); color: var(--ink); }
+  .pill.new { background: var(--gold); }
+  .pill.doing { background: var(--blue); color: #fff; }
+  .pill.done { background: var(--green); color: #fff; }
+  .pill.no { background: #D5D0C6; }
+  .ideas-empty { text-align: center; color: var(--muted); background: var(--white); border: 1px dashed var(--line); border-radius: var(--radius); padding: 30px; }
   footer { background: var(--night); color: #AEB4BF; padding: 44px 0 54px; text-align: center; font-size: 15px; }
   footer img { width: 48px; margin: 0 auto 12px; }
   footer a { color: var(--mint); }
@@ -193,6 +210,7 @@
       <a href="#apps">Apps</a>
       <a href="#pictures">Pictures</a>
       <a href="#get">Get it</a>
+      <a href="#ideas">Recommend</a>
       <a href="#questions">Questions</a>
     </div>
     <a class="btn gold" href="#get">Download</a>
@@ -398,6 +416,20 @@
   </div>
 </section>
 
+<section id="ideas" style="background: var(--paper2);">
+  <div class="wrap">
+    <span class="kicker">Recommendations</span>
+    <h2>What should Ollie OS have next?</h2>
+    <p class="lead">An app, a game, a fix, a colour? Send your idea. biobro reads every one, and the best ones get made.</p>
+    <div class="ideas-top">
+      <a class="btn gold" href="https://github.com/robertpjenkins-bot/Ollie-OS/issues/new?title=Idea%3A%20&body=%23%23%23%20My%20recommendation%0A%0A%0A%0A%23%23%23%20Why%20it%20would%20be%20good%0A%0A" target="_blank" rel="noopener">Send a recommendation</a>
+      <a class="btn dark" href="https://github.com/robertpjenkins-bot/Ollie-OS/issues?q=is%3Aissue+in%3Atitle+Idea%3A" target="_blank" rel="noopener">See them on GitHub</a>
+    </div>
+    <p class="ideas-note">It opens a form on GitHub (you need a GitHub account, which is for people 13 and older: under 13, ask a grown-up to send it). Start the title with "Idea:". Vote for an idea with a thumbs up on GitHub.</p>
+    <div class="ideas" id="idea-list"><div class="ideas-empty">Getting the recommendations...</div></div>
+  </div>
+</section>
+
 <section id="questions">
   <div class="wrap">
     <span class="kicker">Questions</span>
@@ -440,6 +472,48 @@
       document.querySelectorAll('.tile').forEach(function (t) { t.hidden = kind !== 'all' && t.dataset.kind !== kind; });
     });
   });
+
+  // Recommendations: GitHub issues whose title starts with "Idea:" (newest
+  // first; not ones labelled "hidden"). Shown as plain text only.
+  (function () {
+    var list = document.getElementById('idea-list');
+    var url = new URLSearchParams(location.search).get('ideas') ||
+      'https://api.github.com/repos/robertpjenkins-bot/Ollie-OS/issues?state=all&per_page=100&sort=created&direction=desc';
+    function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+    function say(text) { list.textContent = ''; list.appendChild(el('div', 'ideas-empty', text)); }
+    fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (issues) {
+        var ideas = issues.filter(function (i) {
+          var labels = (i.labels || []).map(function (l) { return (l.name || '').toLowerCase(); });
+          return !i.pull_request && /^\s*idea\s*[:\-]/i.test(i.title || '') && labels.indexOf('hidden') < 0 && labels.indexOf('spam') < 0;
+        });
+        if (!ideas.length) { say('No recommendations yet. Be the first!'); return; }
+        list.textContent = '';
+        ideas.forEach(function (i) {
+          var labels = (i.labels || []).map(function (l) { return (l.name || '').toLowerCase(); });
+          var card = el('div', 'idea');
+          card.appendChild(el('h3', null, i.title.replace(/^\s*idea\s*[:\-]\s*/i, '') || 'An idea'));
+          var text = (i.body || '').replace(/^#+\s*(My recommendation|Why it would be good)\s*$/gim, '').replace(/[*_`>#]/g, '').replace(/\n{3,}/g, '\n\n').trim();
+          if (text.length > 400) text = text.slice(0, 400).replace(/\s+\S*$/, '') + '...';
+          if (text) card.appendChild(el('p', null, text));
+          var meta = el('div', 'meta');
+          var state = i.state === 'closed'
+            ? (i.state_reason === 'not_planned' ? ['no', 'Not this time'] : ['done', 'Done'])
+            : (labels.indexOf('working on it') >= 0 || labels.indexOf('in progress') >= 0 ? ['doing', 'Being made'] : ['new', 'New']);
+          meta.appendChild(el('span', 'pill ' + state[0], state[1]));
+          var votes = (i.reactions && i.reactions['+1']) || 0;
+          meta.appendChild(el('span', null, votes + (votes === 1 ? ' vote' : ' votes')));
+          meta.appendChild(el('span', null, new Date(i.created_at).toLocaleDateString()));
+          var link = el('a', null, 'by ' + ((i.user && i.user.login) || 'someone'));
+          if (/^https:\/\/github\.com\//.test(i.html_url || '')) { link.href = i.html_url; link.target = '_blank'; link.rel = 'noopener'; }
+          meta.appendChild(link);
+          card.appendChild(meta);
+          list.appendChild(card);
+        });
+      })
+      .catch(function () { say('The recommendations could not be loaded right now. See them on GitHub instead.'); });
+  })();
 </script>
 </body>
 </html>
