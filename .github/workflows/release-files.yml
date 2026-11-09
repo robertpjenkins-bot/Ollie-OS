@@ -1,5 +1,5 @@
 # Put the newest downloads on a GitHub release (Ollie OS v1.7 and later):
-# when downloads/release.json changes, its "upload" files go on the release
+# when downloads/release.json or the release notes change, its "upload" files go on the release
 # named by "tag" (replacing files of the same name), its "remove" files come
 # off it, and the release's text becomes the "notes" file.
 name: Release files
@@ -8,6 +8,7 @@ on:
   push:
     paths:
       - "downloads/release.json"
+      - "downloads/Ollie-OS-Release-Description.txt"
 
 permissions:
   contents: write
