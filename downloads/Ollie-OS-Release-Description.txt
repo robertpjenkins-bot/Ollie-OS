@@ -41,3 +41,6 @@ Download **Ollie-OS-Latest-Updater-x86_64.AppImage** and open it. It brings ever
 - Installing Windows needs internet (about 6 GB) and at least 64 GB of space on the drive for Windows.
 - Windows asks for a product key. You can press "I don't have a product key" and add one later.
 - Windows 10 doesn't get security updates from Microsoft anymore. Windows 11 is the safer choice.
+
+### Licences
+Ollie OS's own code is MIT-licensed. It is built from free software by many other people: see [THIRD-PARTY-NOTICES.md](https://github.com/robertpjenkins-bot/Ollie-OS/blob/claude/fervent-gates-cs7smv/THIRD-PARTY-NOTICES.md) for what, its licences and its source code. Not made by or connected with Valve, Microsoft, Apple, Mojang, Dell or Nintendo. Windows needs its own licence. Only use games you own.
