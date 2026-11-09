@@ -1,0 +1,26 @@
+# The labels the website's Recommendations tab uses (docs/index.html):
+# "working on it" shows an idea as Being made; "hidden" takes it off the
+# website. Made (or updated) whenever this file changes.
+name: Labels
+
+on:
+  push:
+    paths:
+      - ".github/workflows/labels.yml"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Make the labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh label create "working on it" --color 336B9E --description "Recommendation being made (website: Being made)" --force
+          gh label create "hidden" --color 6B6F78 --description "Not shown on the website's Recommendations" --force
+          gh label list --limit 50
