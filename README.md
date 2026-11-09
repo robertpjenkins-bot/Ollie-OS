@@ -94,3 +94,12 @@ asks): when there's a new update you get a notification with an Install
 button. Update Ollie OS keeps everything else up to date in one click.
 
 🌐 Website: https://robertpjenkins-bot.github.io/Ollie-OS/
+
+## Licences
+
+Ollie OS's own code is under the [MIT License](LICENSE). It is built from free
+software by many other people (Arch Linux's packages, shim, xorriso and more):
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) says what, under which
+licence, and where the source code is. Ollie OS is not made by or connected with
+Valve, Microsoft, Apple, Mojang, Dell or Nintendo; their names are trademarks of
+their owners. Only use games you own.

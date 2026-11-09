@@ -10,8 +10,10 @@ package shim-signed 1.58+15.8-0ubuntu1 (amd64):
 shim 15.8 is new enough for Microsoft's revocations (SBAT shim,4). It starts
 grubx64.efi next to it: Ollie OS's systemd-boot, signed with the Ollie OS key.
 
-shim is free software (BSD 2-clause): https://github.com/rhboot/shim
-Copyright (c) 2012-2024 Red Hat, Inc., Canonical Ltd., and the shim authors.
+shim is free software (BSD 2-clause): https://github.com/rhboot/shim. Its full
+copyright and licence, as Ubuntu ships them, are in COPYRIGHT (next to this).
+Copyright 2012 Red Hat, Inc; 2009-2012 Intel Corporation; and the shim authors
+(signed for Secure Boot by Microsoft and Canonical).
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the copyright notice, this list of
 conditions and the disclaimer in https://github.com/rhboot/shim/blob/main/COPYRIGHT

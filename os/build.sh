@@ -227,6 +227,10 @@ step "Building Oliver $version"
 (cd "$repo" && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$version" \
     -o "$profile/airootfs/usr/local/bin/oliver" ./cmd/oliver)
 install -D -m 0644 "$repo/packaging/oliver.desktop" "$profile/airootfs/usr/share/applications/oliver.desktop"
+# Other people's work in Ollie OS, and its licences (THIRD-PARTY-NOTICES.md).
+for f in THIRD-PARTY-NOTICES.md LICENSE; do
+    [[ -f $repo/$f ]] && install -D -m 0644 "$repo/$f" "$profile/airootfs/usr/share/doc/ollie-os/$f"
+done
 install -D -m 0644 "$repo/packaging/oliver.svg" "$profile/airootfs/usr/share/icons/hicolor/scalable/apps/oliver.svg"
 install -D -m 0755 "$os/ollie-write" "$profile/airootfs/usr/local/bin/ollie-write"
 
