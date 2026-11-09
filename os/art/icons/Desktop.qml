@@ -1,4 +1,4 @@
-// A picture of the Ollie OS desktop with its new apps (docs/ollie-os-desktop.png),
+// A picture of the Ollie OS desktop with its newest apps (docs/ollie-os-desktop.png),
 // put together from real parts: Ollie OS's background, the apps' own windows
 // (docs/screenshots), their icons, the Ollie Pet, and a bar like Ollie OS's.
 import QtQuick
@@ -21,8 +21,8 @@ Window {
         x: 22; y: 22
         spacing: 14
         Repeater {
-            model: [["games", "Games"], ["gamehub", "Game Hub"], ["pet", "Ollie Pet"], ["codequest", "Coding Quest"],
-                    ["mathquest", "Math Quest"], ["typing", "Typing Game"], ["appcenter", "App Center"], ["music", "Music Maker"]]
+            model: [["games", "Games"], ["gamehub", "Game Hub"], ["school", "School Planner"], ["paint", "Ollie Paint"],
+                    ["mouse", "Mouse Maker"], ["pet", "Ollie Pet"], ["mathquest", "Math Quest"], ["appcenter", "App Center"]]
             delegate: Column {
                 required property var modelData
                 width: 104
@@ -67,10 +67,10 @@ Window {
         }
     }
 
-    Win { x: 170; y: 34; width: 800; height: 588; title: "Games"; icon: "games"; shot: "games" }
-    Win { x: 1010; y: 40; width: 860; height: 669; title: "Math Quest"; icon: "mathquest"; shot: "mathquest" }
-    Win { x: 1180; y: 520; width: 700; height: 486; title: "Coding Quest"; icon: "codequest"; shot: "codequest" }
-    Win { x: 560; y: 430; width: 640; height: 544; title: "Bobby (Ollie Pet)"; icon: "pet"; shot: "pet"; active: true }
+    // Two windows side by side, each the shape of its screenshot (+ the title bar).
+    // (Together they cover the background's cube and name, so nothing peeks out.)
+    Win { x: 176; y: 150; width: 860; height: 36 + 860 * 780 / 1120; title: "School Planner"; icon: "school"; shot: "school" }
+    Win { x: 1000; y: 212; width: 860; height: 36 + 860 * 760 / 1200; title: "Ollie Paint"; icon: "paint"; shot: "paint"; active: true }
 
     // The pet walking along the bottom of the screen.
     Loader {
@@ -93,28 +93,29 @@ Window {
         Rectangle {
             x: 66; anchors.verticalCenter: parent.verticalCenter; width: 380; height: 38; radius: 19
             color: "white"
-            Text { x: 16; anchors.verticalCenter: parent.verticalCenter; text: "🔍  Search Google..."; color: "#6b7280"; font.pixelSize: 16 }
+            Rectangle { x: 16; anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: -2; width: 13; height: 13; radius: 7; color: "transparent"; border.color: "#6b7280"; border.width: 2
+                Rectangle { x: 10; y: 11; width: 7; height: 2; rotation: 45; color: "#6b7280" } }
+            Text { x: 40; anchors.verticalCenter: parent.verticalCenter; text: "Search Google..."; color: "#6b7280"; font.pixelSize: 16 }
         }
         Row {
             anchors.centerIn: parent; anchors.horizontalCenterOffset: 120
             spacing: 10
             Repeater {
-                model: ["games", "gamehub", "pet", "codequest", "mathquest", "typing", "comic", "music", "photobooth", "appcenter", "trophies", "finder"]
+                model: ["games", "gamehub", "school", "paint", "mouse", "pet", "mathquest", "codequest", "music", "appcenter", "trophies", "finder"]
                 delegate: Item {
                     required property string modelData
                     width: 46; height: 56
-                    readonly property bool open: ["games", "pet", "world", "codequest"].includes(modelData)
-                    Rectangle { anchors.fill: parent; anchors.margins: 2; radius: 6; color: modelData === "pet" ? "#3314b8a6" : "transparent" }
+                    readonly property bool open: ["school", "paint"].includes(modelData)
+                    Rectangle { anchors.fill: parent; anchors.margins: 2; radius: 6; color: modelData === "paint" ? "#3314b8a6" : "transparent" }
                     Image { anchors.centerIn: parent; source: desk.icons + "ollie-" + modelData + ".png"; width: 38; height: 38 }
                     Rectangle { visible: parent.open; anchors.bottom: parent.bottom; anchors.horizontalCenter: parent.horizontalCenter
-                        width: modelData === "pet" ? 34 : 14; height: 3; radius: 1.5; color: "#14b8a6" }
+                        width: modelData === "paint" ? 34 : 14; height: 3; radius: 1.5; color: "#14b8a6" }
                 }
             }
         }
         Row {
             anchors.right: parent.right; anchors.rightMargin: 18; anchors.verticalCenter: parent.verticalCenter
             spacing: 18
-            Text { text: "🎮  📶  🔊  🔋"; color: "white"; font.pixelSize: 18; anchors.verticalCenter: parent.verticalCenter }
             Column {
                 Text { text: "4:20 PM"; color: "white"; font.pixelSize: 16; anchors.right: parent.right }
                 Text { text: "Thursday"; color: "#c0c4c8"; font.pixelSize: 13; anchors.right: parent.right }
