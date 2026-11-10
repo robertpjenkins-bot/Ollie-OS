@@ -2,19 +2,25 @@
 # Windows Updater: on an Ollie OS that is already installed (on a drive or
 # inside a computer), adds Windows 10 or 11 next to Ollie OS, the way the
 # Drive Writer and the Installer do it when you say yes to Windows. It asks:
-#   1. which drive has Ollie OS on it (it can only change the drive it is
-#      running from; parts that come after Ollie OS's are left alone),
-#   2. Windows 10 or 11,
-#   3. a regular computer (Intel / AMD) or an ARM one (Ollie OS is for regular
+#   1. Windows 10 or 11,
+#   2. a regular computer (Intel / AMD) or an ARM one (Ollie OS is for regular
 #      ones, so ARM Windows cannot be added: it says so),
-#   4. how much room Windows gets (and checks Ollie OS has it to give),
-# then downloads Windows from Microsoft (about 6 GB, kept in /var/lib/ollie),
-# adds what Ollie OS needs for it (Install Windows in the apps menu, Restart
-# into Windows, the Windows start-up menu entry) and leaves the plan
-# (/boot/ollie-windows-plan). At the next start Ollie OS's part is made
-# smaller and the room (and a 10 GB Windows Setup part) is made
-# (usr/local/lib/ollie/windows-plan); at the login after that "Install
-# Windows" opens, puts the downloaded Windows on the Setup part and starts it.
+# then looks, and tells what it found:
+#   - a Windows already on this computer: it offers to put that one on Ollie
+#     OS's start-up menu instead of adding another,
+#   - a Windows .iso in Downloads (or the Desktop, the home folder): it is used,
+#   - none: Windows is downloaded from Microsoft (about 6 GB; if Microsoft says
+#     no, the browser page opens and the file is picked up from Downloads),
+# and then asks
+#   3. which drive has Ollie OS on it (it can only change the drive it is
+#      running from; parts that come after Ollie OS's are left alone),
+#   4. how much room Windows gets (and checks Ollie OS has it to give).
+# It keeps the Windows .iso in /var/lib/ollie, adds what Ollie OS needs for it
+# (Install Windows in the apps menu, Restart into Windows, the Windows start-up
+# menu entry) and leaves the plan (/boot/ollie-windows-plan). At the next start
+# Ollie OS's part is made smaller and the room (and a 10 GB Windows Setup part)
+# is made (usr/local/lib/ollie/windows-plan); at the login after that "Install
+# Windows" opens, puts Windows on the Setup part and starts it.
 # When Windows is installed, it is on Ollie OS's start-up menu.
 # Nothing of Ollie OS's own files is deleted. Windows needs its own licence
 # (a product key); this does not include one. No password: Ollie OS's admin
@@ -62,6 +68,21 @@ sudo -n true 2>/dev/null ||
 [[ -d /sys/firmware/efi ]] ||
     die "this computer started the old way (BIOS / Legacy). Windows needs it to start the new way (UEFI): change it in the computer's start-up settings."
 
+install_files() { # what Ollie OS needs for Windows, from inside this app
+    # (Inside this app only you can read: root installs from a copy outside it.)
+    local tmp path rel mode
+    tmp="$(mktemp -d)"
+    cp -a "$files/." "$tmp/" || { rm -rf "${tmp:?}"; die "could not unpack $TITLE (is the disk full?)."; }
+    while IFS= read -r -d '' path; do
+        rel="${path#"$tmp/"}" mode=0644
+        [[ -x $path ]] && mode=0755
+        sudo -n install -D -m "$mode" "$path" "/$rel" || { rm -rf "${tmp:?}"; die "could not add /$rel to Ollie OS."; }
+    done < <(find "$tmp" -type f -print0)
+    rm -rf "${tmp:?}"
+    have kbuildsycoca6 && kbuildsycoca6 >/dev/null 2>&1
+    return 0
+}
+
 # --- Is there already a Windows? ----------------------------------------------------------
 if [[ -f /boot/loader/entries/windows.conf ]]; then
     printf '\nWindows is already on the start-up menu. Pick it when the computer starts.\n\nPress Enter to close.'
@@ -69,7 +90,86 @@ if [[ -f /boot/loader/entries/windows.conf ]]; then
     exit 0
 fi
 
-# --- 1. Which drive has Ollie OS on it? ----------------------------------------------------
+# --- 1. Windows 10 or 11? -------------------------------------------------------------------
+printf '\n%s1. Which Windows?%s\n\n  1) Windows 10   (no security updates from Microsoft any more)\n  2) Windows 11   (safer; needs about 64 GB of room)\n' "$bold" "$reset"
+while :; do
+    read -rp "Type 1 or 2: " w || exit 1
+    case "$w" in 1) VERSION=10 ;; 2) VERSION=11 ;; *) echo "Please type 1 or 2."; continue ;; esac
+    break
+done
+((VERSION == 11)) && MIN_GB=64 || MIN_GB=32
+
+# --- 2. Regular computer or ARM? ------------------------------------------------------------
+printf '\n%s2. Is this computer an ARM one?%s\n\n  1) No: a regular computer (Intel or AMD), like most laptops and desktops\n  2) Yes: ARM (some Windows tablets and laptops, Apple M-chip Macs)\n' "$bold" "$reset"
+while :; do
+    read -rp "Type 1 or 2: " a || exit 1
+    case "$a" in 1) arm=0 ;; 2) arm=1 ;; *) echo "Please type 1 or 2."; continue ;; esac
+    break
+done
+if ((arm)); then
+    die "Ollie OS is made for regular (Intel / AMD) computers, so it cannot run Windows for ARM next to it. Nothing was changed."
+fi
+if [[ "$(uname -m)" != x86_64 ]]; then
+    die "this computer says it is not a regular (x86_64) one (it says $(uname -m)). Windows $VERSION for regular computers would not run on it."
+fi
+
+iso="/var/lib/ollie/windows-$VERSION.iso"
+# --- Is a Windows already on this computer? --------------------------------------------------
+# (Its Windows Boot Manager is in the computer's start-up list.) If so, it only
+# needs to be put on Ollie OS's start-up menu; no second Windows is needed.
+if sudo -n efibootmgr 2>/dev/null | grep -qi 'Windows Boot Manager'; then
+    printf '\n%sWindows is already on this computer%s (its Windows Boot Manager is in the start-up list).\n' "$green$bold" "$reset"
+    read -rp "Put it on Ollie OS's start-up menu now, instead of adding another Windows? [Y/n] " answer || exit 1
+    if [[ ${answer,,} != n* ]]; then
+        say "Putting Windows on Ollie OS's start-up menu"
+        install_files
+        sudo -n /usr/local/bin/ollie-windows-boot || die "Windows could not be put on the start-up menu (see above)."
+        printf '\n%s  Done.%s When the computer starts from the Ollie OS drive, pick "Windows Boot Manager"\n' "$green$bold" "$reset"
+        printf '  in its menu. From Ollie OS: apps menu > System > Restart into Windows.\n\nPress Enter to close.'
+        read -r _ || true
+        exit 0
+    fi
+fi
+
+dl="$(xdg-user-dir DOWNLOAD 2>/dev/null)"
+dl="${dl:-$HOME/Downloads}"
+# A Windows .iso already on this computer (Downloads, Desktop, the home folder):
+# files named like Win10_...iso or Windows11...iso, newest first, ones for the
+# Windows picked here first. The result is told before anything else happens.
+mine=""
+if [[ -s $iso ]]; then
+    printf "\nWindows %s is already downloaded on this computer (%s): it will be used.\n" "$VERSION" "$iso"
+else
+    printf '\n%sLooking for a Windows %s .iso in %s and the Desktop...%s\n' "$bold" "$VERSION" "$dl" "$reset"
+    mapfile -t cands < <(
+        find "$dl" "$HOME/Desktop" "$HOME" -maxdepth 1 -type f -iname '*.iso' \( -iname 'win*' \) -size +3G -printf '%T@ %p\n' 2>/dev/null |
+            sort -rn | cut -d ' ' -f 2- | awk -v v="$VERSION" '!seen[$0]++ {if (tolower($0) ~ "win(dows)?[ _-]?" v) a[++n] = $0; else b[++m] = $0} END {for (i = 1; i <= n; i++) print a[i]; for (i = 1; i <= m; i++) print b[i]}'
+    )
+    if ((${#cands[@]})); then
+        printf '\nFound on this computer:\n'
+        for i in "${!cands[@]}"; do
+            ((i < 5)) && printf '  %d) %s  (%s)\n' "$((i + 1))" "${cands[i]}" "$(du -h --apparent-size "${cands[i]}" | cut -f 1)"
+        done
+        while :; do
+            read -rp "Use one of these as Windows $VERSION? Type its number, or n to download it instead [1] " pick || exit 1
+            pick="${pick:-1}"
+            if [[ ${pick,,} == n* ]]; then
+                echo "OK: Windows $VERSION will be downloaded from Microsoft."
+                break
+            fi
+            if [[ $pick =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#cands[@]} && pick <= 5)); then
+                mine="${cands[pick - 1]}"
+                printf 'OK: %s will be used (nothing to download).\n' "$mine"
+                break
+            fi
+            echo "Please type a number from 1 to $((${#cands[@]} < 5 ? ${#cands[@]} : 5)), or n."
+        done
+    else
+        echo "No Windows .iso there: Windows $VERSION will be downloaded from Microsoft."
+    fi
+fi
+
+# --- 3. Which drive has Ollie OS on it? ----------------------------------------------------
 # (Windows is added to the drive Ollie OS is running from: it makes that
 # drive's Ollie OS part smaller. Another drive needs its own Ollie OS start.)
 src="$(findmnt -no SOURCE / | sed 's/\[.*//')"
@@ -78,7 +178,7 @@ src="$(findmnt -no SOURCE / | sed 's/\[.*//')"
 name="${src#/dev/}"
 disk="/dev/$(lsblk -no PKNAME "$src" | head -n 1)"
 mapfile -t drives < <(lsblk -dpno NAME,SIZE,TYPE,MODEL 2>/dev/null | awk '$3 == "disk" && $1 !~ /zram|loop|ram/ {n = $1; s = $2; $1 = $2 = $3 = ""; sub(/^ +/, ""); print n "|" s "|" $0}')
-printf '\n%s1. Which drive has Ollie OS on it?%s\n\n' "$bold" "$reset"
+printf '\n%s3. Which drive has Ollie OS on it?%s\n\n' "$bold" "$reset"
 for i in "${!drives[@]}"; do
     IFS='|' read -r dname dsize dmodel <<<"${drives[i]}"
     mark=""
@@ -93,29 +193,6 @@ done
 IFS='|' read -r chosen _ <<<"${drives[pick - 1]}"
 if [[ $chosen != "$disk" ]]; then
     die "Ollie OS is running from $disk, not $chosen. Windows can only be added to the drive Ollie OS is running from. Start the computer from the Ollie OS drive you want (hold F12 / Option / Volume Down), then run $TITLE again."
-fi
-
-# --- 2. Windows 10 or 11? -------------------------------------------------------------------
-printf '\n%s2. Which Windows?%s\n\n  1) Windows 10   (no security updates from Microsoft any more)\n  2) Windows 11   (safer; needs about 64 GB of room)\n' "$bold" "$reset"
-while :; do
-    read -rp "Type 1 or 2: " w || exit 1
-    case "$w" in 1) VERSION=10 ;; 2) VERSION=11 ;; *) echo "Please type 1 or 2."; continue ;; esac
-    break
-done
-((VERSION == 11)) && MIN_GB=64 || MIN_GB=32
-
-# --- 3. Regular computer or ARM? ------------------------------------------------------------
-printf '\n%s3. Is this computer an ARM one?%s\n\n  1) No: a regular computer (Intel or AMD), like most laptops and desktops\n  2) Yes: ARM (some Windows tablets and laptops, Apple M-chip Macs)\n' "$bold" "$reset"
-while :; do
-    read -rp "Type 1 or 2: " a || exit 1
-    case "$a" in 1) arm=0 ;; 2) arm=1 ;; *) echo "Please type 1 or 2."; continue ;; esac
-    break
-done
-if ((arm)); then
-    die "Ollie OS is made for regular (Intel / AMD) computers, so it cannot run Windows for ARM next to it. Nothing was changed."
-fi
-if [[ "$(uname -m)" != x86_64 ]]; then
-    die "this computer says it is not a regular (x86_64) one (it says $(uname -m)). Windows $VERSION for regular computers would not run on it."
 fi
 
 # --- Does Ollie OS's drive have room to give? -------------------------------------------------
@@ -196,38 +273,6 @@ if ((${#need[@]})); then
 fi
 
 say "Getting Windows $VERSION"
-iso="/var/lib/ollie/windows-$VERSION.iso"
-dl="$(xdg-user-dir DOWNLOAD 2>/dev/null)"
-dl="${dl:-$HOME/Downloads}"
-# A Windows .iso already on this computer (Downloads, Desktop, the home folder):
-# files named like Win10_...iso or Windows11...iso, newest first, ones for the
-# Windows picked here first. Asked about before anything is downloaded.
-mine=""
-if [[ ! -s $iso ]]; then
-    echo "Looking for a Windows .iso in $dl and the Desktop..."
-    mapfile -t cands < <(
-        find "$dl" "$HOME/Desktop" "$HOME" -maxdepth 1 -type f -iname '*.iso' \( -iname 'win*' \) -size +3G -printf '%T@ %p\n' 2>/dev/null |
-            sort -rn | cut -d ' ' -f 2- | awk -v v="$VERSION" '!seen[$0]++ {if (tolower($0) ~ "win(dows)?[ _-]?" v) a[++n] = $0; else b[++m] = $0} END {for (i = 1; i <= n; i++) print a[i]; for (i = 1; i <= m; i++) print b[i]}'
-    )
-    if ((${#cands[@]})); then
-        printf '\nFound on this computer:\n'
-        for i in "${!cands[@]}"; do
-            ((i < 5)) && printf '  %d) %s  (%s)\n' "$((i + 1))" "${cands[i]}" "$(du -h --apparent-size "${cands[i]}" | cut -f 1)"
-        done
-        while :; do
-            read -rp "Use one of these as Windows $VERSION? Type its number, or n to download it instead [1] " pick || exit 1
-            pick="${pick:-1}"
-            [[ ${pick,,} == n* ]] && break
-            if [[ $pick =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#cands[@]} && pick <= 5)); then
-                mine="${cands[pick - 1]}"
-                break
-            fi
-            echo "Please type a number from 1 to $((${#cands[@]} < 5 ? ${#cands[@]} : 5)), or n."
-        done
-    else
-        echo "None found: Windows $VERSION is downloaded instead."
-    fi
-fi
 if [[ -s $iso ]]; then
     echo "It is already downloaded ($iso)."
 elif [[ -n $mine ]]; then
@@ -280,16 +325,7 @@ else
 fi
 
 say "Adding Install Windows to Ollie OS"
-# (Inside this app only you can read: root installs from a copy outside it.)
-tmp="$(mktemp -d)"
-trap 'rm -rf "${tmp:?}"' EXIT
-cp -a "$files/." "$tmp/" || die "could not unpack $TITLE (is the disk full?)."
-while IFS= read -r -d '' path; do
-    rel="${path#"$tmp/"}" mode=0644
-    [[ -x $path ]] && mode=0755
-    sudo -n install -D -m "$mode" "$path" "/$rel" || die "could not add /$rel to Ollie OS."
-done < <(find "$tmp" -type f -print0)
-have kbuildsycoca6 && kbuildsycoca6 >/dev/null 2>&1
+install_files
 sudo -n systemctl daemon-reload
 sudo -n systemctl enable ollie-windows-plan.service >/dev/null 2>&1 ||
     die "Ollie OS could not be told to make the room at the next start."
