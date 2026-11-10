@@ -226,14 +226,26 @@ if [ -d "$src" ]; then rm -rf "${src:?}" 2>/dev/null || as_builder rm -rf --one-
 mkdir -p "$src" && tar -xzf "$source_tar" -C "$src" || die "could not unpack the recipe (is the disk full?)."
 
 start=$(date +%s)
+# Asked first, when someone is at the keyboard: download Arch Linux (the
+# default), or look for a copy already on this computer. Without anyone to ask,
+# a recent copy found is used.
+look=1
+if [ -t 0 ] && [ -z "${OLLIE_BUILD_YES:-}" ]; then
+    printf '\n'
+    read -rp "Download the Arch Linux ISO from the Arch Linux servers now (about 1.4 GB)? [Y/n] (n: use a copy already on this computer) " answer
+    case "$answer" in n* | N*) ;; *) look="" ;; esac
+fi
 case "$kind" in
 userns | sudo)
-    say "Looking for Arch Linux on this computer"
-    iso_file="$(find_iso)"
+    iso_file=""
+    if [ -n "$look" ]; then
+        say "Looking for Arch Linux on this computer"
+        iso_file="$(find_iso)"
+    fi
     if [ -n "$iso_file" ]; then
         echo "  Found it: $iso_file (no download needed)."
     else
-        echo "  None here (an archlinux-...-x86_64.iso less than 4 months old)."
+        [ -n "$look" ] && echo "  None here (an archlinux-...-x86_64.iso less than 4 months old)."
         say "Downloading the Arch Linux ISO from the Arch Linux servers (about 1.4 GB)"
         fetch_iso || die "could not download the Arch Linux ISO from the Arch servers. Is the internet connected? Run this again to retry."
     fi
@@ -259,14 +271,17 @@ userns | sudo)
     ;;
 *)
     # An Arch Linux ISO found on this computer goes in too (no download inside).
-    say "Looking for Arch Linux on this computer"
-    found="$(find_iso)"
+    found=""
+    if [ -n "$look" ]; then
+        say "Looking for Arch Linux on this computer"
+        found="$(find_iso)"
+    fi
     found_args=()
     if [ -n "$found" ]; then
         echo "  Found it: $found (no download needed)."
         found_args=(-v "$found:/arch.iso:ro" -e OLLIE_ARCH_ISO=/arch.iso)
     else
-        echo "  None here: the build downloads it (about 1.4 GB)."
+        echo "  The build downloads it (about 1.4 GB)."
     fi
     "${engine[@]}" run --rm --privileged ${rootless:+-e OLLIE_ROOTLESS=1} ${found_args[@]+"${found_args[@]}"} -v "$src:/src" -w /src \
         docker.io/library/archlinux:latest bash os/build-from-arch-iso.sh /var/tmp/ollie-from-iso >"$work/build.log" 2>&1 &

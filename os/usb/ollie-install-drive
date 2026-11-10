@@ -274,7 +274,16 @@ cp -f "$recipe" "$work/ollie-os-source.tar.gz" || die "could not copy the recipe
 # much older may not take today's packages), else downloaded fresh and
 # checked against the Arch servers' checksums.
 bootstrap="${OLLIE_DRIVE_BOOTSTRAP:-}" downloaded="" found=""
-if [[ -z $bootstrap ]]; then
+# Asked first, when someone is at the keyboard: download it (the default), or
+# look for a copy already on this computer. Without anyone to ask, a recent
+# copy found is used.
+search=1
+if [[ -z $bootstrap && -t 0 && -z "${OLLIE_DRIVE_YES:-}" ]]; then
+    printf '\n'
+    read -rp "Download Arch Linux from the Arch servers now (about 150 MB)? [Y/n] (n: use a copy already on this computer) " answer
+    [[ ${answer,,} == n* ]] || search=""
+fi
+if [[ -z $bootstrap && -n $search ]]; then
     say "Looking for Arch Linux on this computer"
     # In the work folder, Downloads, Desktop, the home folder, next to this
     # app, or on a USB drive plugged in.

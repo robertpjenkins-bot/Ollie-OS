@@ -114,7 +114,13 @@ func build() error {
 	// than 4 months old in Downloads, on the Desktop, in the home folder or
 	// next to this program. Else from the Arch Linux servers.
 	if !strings.Contains(wslOutput("--list", "--quiet"), distro) {
-		say("Looking for Arch Linux on this PC")
+		// Asked first: download it (the default), or use a copy on this PC.
+		a := strings.ToLower(ask("Download Arch Linux from the Arch Linux servers now (about 150 MB)? [Y/n] (n: use a copy already on this PC) "))
+		if a == "n" || a == "no" {
+			say("Looking for Arch Linux on this PC")
+		} else {
+			goto download
+		}
 		if found := findArch(home, downloads, work); found != "" {
 			fmt.Println("  Found it: " + found + " (no download needed).")
 			c := wsl("--import", distro, filepath.Join(work, "wsl"), found, "--version", "2")
@@ -130,6 +136,7 @@ func build() error {
 			fmt.Println("  None here.")
 		}
 	}
+download:
 	if !strings.Contains(wslOutput("--list", "--quiet"), distro) {
 		say("Getting Arch Linux from the Arch Linux servers (about 150 MB)")
 		img := filepath.Join(work, "archlinux.wsl")
