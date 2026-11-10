@@ -195,10 +195,46 @@ if ((${#need[@]})); then
         die "the tools could not be added (no internet?). Try again, or bring Ollie OS up to date with the Ollie OS Updater first."
 fi
 
-say "Downloading Windows $VERSION from Microsoft"
+say "Getting Windows $VERSION"
 iso="/var/lib/ollie/windows-$VERSION.iso"
+dl="$(xdg-user-dir DOWNLOAD 2>/dev/null)"
+dl="${dl:-$HOME/Downloads}"
+# A Windows .iso already on this computer (Downloads, Desktop, the home folder):
+# files named like Win10_...iso or Windows11...iso, newest first, ones for the
+# Windows picked here first. Asked about before anything is downloaded.
+mine=""
+if [[ ! -s $iso ]]; then
+    echo "Looking for a Windows .iso in $dl and the Desktop..."
+    mapfile -t cands < <(
+        find "$dl" "$HOME/Desktop" "$HOME" -maxdepth 1 -type f -iname '*.iso' \( -iname 'win*' \) -size +3G -printf '%T@ %p\n' 2>/dev/null |
+            sort -rn | cut -d ' ' -f 2- | awk -v v="$VERSION" '!seen[$0]++ {if (tolower($0) ~ "win(dows)?[ _-]?" v) a[++n] = $0; else b[++m] = $0} END {for (i = 1; i <= n; i++) print a[i]; for (i = 1; i <= m; i++) print b[i]}'
+    )
+    if ((${#cands[@]})); then
+        printf '\nFound on this computer:\n'
+        for i in "${!cands[@]}"; do
+            ((i < 5)) && printf '  %d) %s  (%s)\n' "$((i + 1))" "${cands[i]}" "$(du -h --apparent-size "${cands[i]}" | cut -f 1)"
+        done
+        while :; do
+            read -rp "Use one of these as Windows $VERSION? Type its number, or n to download it instead [1] " pick || exit 1
+            pick="${pick:-1}"
+            [[ ${pick,,} == n* ]] && break
+            if [[ $pick =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#cands[@]} && pick <= 5)); then
+                mine="${cands[pick - 1]}"
+                break
+            fi
+            echo "Please type a number from 1 to $((${#cands[@]} < 5 ? ${#cands[@]} : 5)), or n."
+        done
+    else
+        echo "None found: Windows $VERSION is downloaded instead."
+    fi
+fi
 if [[ -s $iso ]]; then
     echo "It is already downloaded ($iso)."
+elif [[ -n $mine ]]; then
+    echo "Keeping a copy of $mine for Windows Setup (no download needed)..."
+    sudo -n install -d -m 0755 /var/lib/ollie || die "could not make /var/lib/ollie."
+    sudo -n cp --reflink=auto -- "$mine" "$iso.part" || die "could not keep a copy (is the disk full? it needs about 6 GB)."
+    sudo -n mv "$iso.part" "$iso" || die "could not keep the copy."
 else
     # (Microsoft's own page gives the link; it works for about a day.)
     if link="$(python3 -I "$files/usr/local/lib/ollie/get-windows.py" "$VERSION")"; then
@@ -208,8 +244,6 @@ else
         # instead, and pick the file up from Downloads by itself.
         link=""
         sudo -n install -d -m 0755 /var/lib/ollie || die "could not make /var/lib/ollie."
-        dl="$(xdg-user-dir DOWNLOAD 2>/dev/null)"
-        dl="${dl:-$HOME/Downloads}"
         printf '\nMicrosoft would not let Windows be downloaded automatically (see above).\n'
         printf 'The browser can: its page opens now. Pick English and 64-bit, press Download,\n'
         printf 'and wait. When the file is in %s this goes on by itself (waits up to 60 minutes).\n\n' "$dl"
