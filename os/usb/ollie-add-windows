@@ -138,7 +138,7 @@ dl="${dl:-$HOME/Downloads}"
 # Windows picked here first. The result is told before anything else happens.
 mine=""
 if [[ -s $iso ]]; then
-    printf "\nWindows %s is already downloaded on this computer (%s): it will be used.\n" "$VERSION" "$iso"
+    printf "\nA Windows %s .iso was saved on this computer before (%s): it will be used, nothing to download.\n" "$VERSION" "$iso"
 else
     printf '\n%sLooking for a Windows %s .iso in %s and the Desktop...%s\n' "$bold" "$VERSION" "$dl" "$reset"
     mapfile -t cands < <(
@@ -236,11 +236,21 @@ while :; do
     echo "Please type a number from $MIN_GB to $max_gb."
 done
 
+# What happens about Windows itself: told the way the earlier step found it.
+if [[ -n $mine ]]; then
+    getline="Windows $VERSION is not downloaded: the file you picked ($mine) is used."
+    ask="Make room for Windows $VERSION? Type yes: "
+elif [[ -s $iso ]]; then
+    getline="Windows $VERSION is not downloaded again: the one already saved on this computer ($iso) is used."
+    ask="Make room for Windows $VERSION? Type yes: "
+else
+    getline="Windows $VERSION is downloaded from Microsoft now (about 6 GB; it needs the internet and takes a while)."
+    ask="Download Windows $VERSION and make room for it? Type yes: "
+fi
 cat <<EOF
 
 ${bold}Before this starts${reset}
-  - Windows $VERSION is downloaded from Microsoft now (about 6 GB; it needs the
-    internet and takes a while).
+  - $getline
   - Ollie OS's part of $disk will be made $((gb + 12)) GB smaller, at the
     next start of the computer ($gb GB of empty room for Windows, 10 GB for
     Windows Setup, 2 GB spare). It keeps all its games and files.
@@ -250,7 +260,7 @@ ${bold}Before this starts${reset}
   - If this drive has BitLocker on, or you are not sure, stop here.
 
 EOF
-read -rp "Download Windows $VERSION and make room for it? Type yes: " answer || exit 1
+read -rp "$ask" answer || exit 1
 [[ ${answer,,} == yes || ${answer,,} == y ]] || {
     printf '\nOK, nothing was changed.\n'
     exit 0
