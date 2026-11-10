@@ -9,13 +9,16 @@ set -uo pipefail
 readonly TITLE="Install Windows"
 version="$(sed -n 's/^VERSION=//p' /etc/ollie/windows 2>/dev/null)"
 version="${version:-11}"
+# A Windows the Add Windows Updater already downloaded (ollie-add-windows).
+ready="/var/lib/ollie/windows-$version.iso"
+[[ -s $ready ]] || ready=""
 
 if [[ ${1:-} == --at-login ]]; then
     [[ -f /boot/loader/entries/windows.conf ]] && exit 0
     kdialog --title "$TITLE" --icon ollie-restart-windows --yes-label "Yes, now" --no-label "Later" --yesno \
         "The room for Windows $version is ready on this drive. Get Windows $version Setup ready now?
 
-It needs the internet (about 6 GB), or a Windows .iso file you have.
+$([[ -n $ready ]] && echo "Windows $version is already downloaded." || echo "It needs the internet (about 6 GB), or a Windows .iso file you have.")
 (Later: open \"Install Windows\" from the apps menu.)" || exit 0
 fi
 if [[ -f /boot/loader/entries/windows.conf ]]; then
@@ -30,12 +33,19 @@ the Ollie OS USB, press Install Ollie OS, and say yes to Windows."
     exit 0
 fi
 
+if [[ -n $ready ]]; then
+    from=ready
+else
 from="$(kdialog --title "$TITLE" --geometry 640x260 --radiolist "Get Windows $version Setup ready. Where does Windows $version come from?" \
     download "Download it from Microsoft (about 6 GB)" on \
     file "A Windows $version .iso file I already have" off \
     page "Open Microsoft's download page (download it there, then come back and pick the file)" off)" || exit 0
+fi
 args=(--version "$version")
 case "$from" in
+ready)
+    args+=(--iso "$ready")
+    ;;
 page)
     xdg-open "https://www.microsoft.com/software-download/windows$version$([[ $version == 10 ]] && echo ISO)" >/dev/null 2>&1 &
     exit 0
@@ -58,6 +68,9 @@ sudo -n /usr/local/bin/ollie-windows-setup "${args[@]}" 2>"$log" | tee -a "$log"
     done
 rc=${PIPESTATUS[0]}
 qdbus6 $bar close >/dev/null 2>&1
+if ((rc == 0)) && [[ -n $ready ]]; then
+    sudo -n rm -f -- "$ready" # it is on the Windows Setup part now
+fi
 if ((rc != 0)); then
     kdialog --title "$TITLE" --error "Windows $version Setup could not be got ready:
 

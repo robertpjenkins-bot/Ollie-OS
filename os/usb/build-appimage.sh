@@ -12,7 +12,7 @@
 #   Ollie-OS-Drive-Installer-x86_64.AppImage      adds the Install Ollie OS that installs into a drive or folder
 #   Ollie-OS-Discover-Updater-x86_64.AppImage     adds Discover, the app store, with Flathub
 #   Ollie-OS-Windows-Boot-Updater-x86_64.AppImage puts Windows on Ollie OS's start-up menu
-#   Ollie-OS-Windows-10-Updater-x86_64.AppImage makes room for Windows 10 next to an installed Ollie OS
+#   Ollie-OS-Add-Windows-Updater-x86_64.AppImage adds Windows 10 or 11 next to an installed Ollie OS (asks the drive, version, ARM or not, downloads it)
 #   Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage adds Wallpaper Maker (your name, or a drawing)
 #   Ollie-OS-Download-Tracker-Updater-x86_64.AppImage adds Download Tracker (biobro's GitHub downloads)
 #   Ollie-OS-Game-Pack-Updater-x86_64.AppImage   adds the Game Pack: Game Mode, Speed Boost, FPS, Minecraft, Settings...
@@ -241,12 +241,12 @@ build_windows_updater() {
     rm -rf "$appdir"
 }
 build_windows_updater
-# Windows 10 Updater: makes room for Windows 10 next to an installed Ollie OS
+# Add Windows Updater: adds Windows 10 or 11 next to an installed Ollie OS
 # and adds Install Windows (what the Installer's "yes to Windows" leaves).
-build_windows10_updater() {
-    local appdir="$out/OllieWindows10.AppDir" f
+build_add_windows_updater() {
+    local appdir="$out/OllieAddWindows.AppDir" f
     rm -rf "$appdir"
-    install -D -m 0755 "$here/ollie-windows10-updater" "$appdir/usr/bin/ollie-windows10-updater"
+    install -D -m 0755 "$here/ollie-add-windows" "$appdir/usr/bin/ollie-add-windows"
     for f in usr/local/lib/ollie/windows-plan usr/local/lib/ollie/get-windows.py \
         etc/systemd/system/ollie-windows-plan.service \
         usr/local/bin/ollie-windows-setup usr/local/bin/ollie-windows-install \
@@ -258,14 +258,14 @@ build_windows10_updater() {
         mkdir -p "$(dirname "$appdir/usr/share/ollie-apps/airootfs/$f")"
         cp -a "$os/profile/airootfs/$f" "$appdir/usr/share/ollie-apps/airootfs/$f"
     done
-    printf '#!/bin/sh\n# AppImage entry point: add Windows 10 next to Ollie OS.\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/ollie-windows10-updater" "$@"\n' >"$appdir/AppRun"
+    printf '#!/bin/sh\n# AppImage entry point: add Windows 10 next to Ollie OS.\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/ollie-add-windows" "$@"\n' >"$appdir/AppRun"
     chmod 0755 "$appdir/AppRun"
-    install -m 0644 "$here/ollie-windows10-updater.desktop" "$appdir/ollie-windows10-updater.desktop"
+    install -m 0644 "$here/ollie-add-windows.desktop" "$appdir/ollie-add-windows.desktop"
     install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
-    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Windows-10-Updater-x86_64.AppImage"
+    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Add-Windows-Updater-x86_64.AppImage"
     rm -rf "$appdir"
 }
-build_windows10_updater
+build_add_windows_updater
 # Wallpaper Maker: a background with your name (and the OS called by it), or drawn.
 build_wallpaper_updater() {
     build_apps_updater Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage "Wallpaper Maker Updater" "Wallpaper Maker" \

@@ -6,11 +6,12 @@
     "downloads/Ollie-OS-Installers-Windows-Mac.zip",
     "downloads/Ollie-OS-Installer-x86_64.AppImage",
     "downloads/Ollie-OS-Latest-Updater-x86_64.AppImage",
-    "downloads/Ollie-OS-Windows-10-Updater-x86_64.AppImage",
+    "downloads/Ollie-OS-Add-Windows-Updater-x86_64.AppImage",
     "downloads/Ollie-OS-Installer-Windows.exe",
     "downloads/Ollie-OS-Installer-Mac.dmg"
   ],
   "remove": [
+    "Ollie-OS-Windows-10-Updater-x86_64.AppImage",
     "Ollie-OS-Installer-x86_64.14.AppImage",
     "Ollie-OS-Latest-Updater-x86_64.4.AppImage"
   ]

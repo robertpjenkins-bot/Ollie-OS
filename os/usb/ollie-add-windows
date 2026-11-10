@@ -1,0 +1,246 @@
+#!/bin/bash
+# Windows Updater: on an Ollie OS that is already installed (on a drive or
+# inside a computer), adds Windows 10 or 11 next to Ollie OS, the way the
+# Drive Writer and the Installer do it when you say yes to Windows. It asks:
+#   1. which drive has Ollie OS on it (it can only change the drive it is
+#      running from),
+#   2. Windows 10 or 11,
+#   3. a regular computer (Intel / AMD) or an ARM one (Ollie OS is for regular
+#      ones, so ARM Windows cannot be added: it says so),
+#   4. how much room Windows gets (and checks Ollie OS has it to give),
+# then downloads Windows from Microsoft (about 6 GB, kept in /var/lib/ollie),
+# adds what Ollie OS needs for it (Install Windows in the apps menu, Restart
+# into Windows, the Windows start-up menu entry) and leaves the plan
+# (/boot/ollie-windows-plan). At the next start Ollie OS's part is made
+# smaller and the room (and a 10 GB Windows Setup part) is made
+# (usr/local/lib/ollie/windows-plan); at the login after that "Install
+# Windows" opens, puts the downloaded Windows on the Setup part and starts it.
+# When Windows is installed, it is on Ollie OS's start-up menu.
+# Nothing of Ollie OS's own files is deleted. Windows needs its own licence
+# (a product key); this does not include one. No password: Ollie OS's admin
+# rights need none. What it adds comes with it, in share/ollie-apps/airootfs.
+#
+#   ollie-add-windows
+set -uo pipefail
+
+readonly TITLE="Windows Updater"
+readonly DEFAULT_GB=64
+readonly ISO_GB=7 # the download (about 6 GB), kept on Ollie OS until Setup has it
+readonly GiB=1073741824
+bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
+say() { printf '\n%s==>%s %s%s%s\n' "$teal$bold" "$reset" "$bold" "$*" "$reset"; }
+die() {
+    printf '\n%sError:%s %s\n\nNothing was changed that matters. Press Enter to close.' "$red$bold" "$reset" "$*" >&2
+    read -r _ || true
+    exit 1
+}
+have() { command -v "$1" >/dev/null 2>&1; }
+here="$(cd "$(dirname "$0")" && pwd)"
+files="${OLLIE_APPS_SHARE:-$here/../share/ollie-apps}/airootfs"
+
+# --- A terminal to talk in -----------------------------------------------------------
+if [[ ! -t 0 && -z "${OLLIE_WINDOWS_IN_TERMINAL:-}" ]]; then
+    export OLLIE_WINDOWS_IN_TERMINAL=1
+    self="${APPIMAGE:-$(realpath -- "$0")}"
+    for term in konsole gnome-terminal kgx xfce4-terminal xterm; do
+        have "$term" || continue
+        case "$term" in
+        konsole) exec konsole --hold -e "$self" "$@" ;;
+        gnome-terminal | kgx) exec "$term" -- "$self" "$@" ;;
+        *) exec "$term" -hold -e "$self" "$@" ;;
+        esac
+    done
+    have kdialog && kdialog --title "$TITLE" --error "No terminal program found. Run this from a terminal instead."
+    exit 1
+fi
+
+printf '\n%s  %s%s  (adds Windows 10 or 11 next to Ollie OS)\n' "$bold" "$TITLE" "$reset"
+[[ -x /usr/local/bin/ollie-first-setup ]] || die "this is not Ollie OS. Run $TITLE on the Ollie OS you want Windows added to."
+sudo -n true 2>/dev/null ||
+    die "this Ollie OS asks for a password for admin tasks, and $TITLE never asks for one. Bring Ollie OS up to date with the Ollie OS Updater, then try again."
+[[ -d $files ]] || die "this copy of $TITLE has nothing inside to add."
+[[ -d /sys/firmware/efi ]] ||
+    die "this computer started the old way (BIOS / Legacy). Windows needs it to start the new way (UEFI): change it in the computer's start-up settings."
+
+# --- Is there already a Windows? ----------------------------------------------------------
+if [[ -f /boot/loader/entries/windows.conf ]]; then
+    printf '\nWindows is already on the start-up menu. Pick it when the computer starts.\n\nPress Enter to close.'
+    read -r _ || true
+    exit 0
+fi
+
+# --- 1. Which drive has Ollie OS on it? ----------------------------------------------------
+# (Windows is added to the drive Ollie OS is running from: it makes that
+# drive's Ollie OS part smaller. Another drive needs its own Ollie OS start.)
+src="$(findmnt -no SOURCE / | sed 's/\[.*//')"
+[[ "$(findmnt -no FSTYPE /)" == btrfs && -b $src ]] ||
+    die "Ollie OS's part is not the kind this can make smaller (btrfs)."
+name="${src#/dev/}"
+disk="/dev/$(lsblk -no PKNAME "$src" | head -n 1)"
+mapfile -t drives < <(lsblk -dpno NAME,SIZE,TYPE,MODEL 2>/dev/null | awk '$3 == "disk" && $1 !~ /zram|loop|ram/ {n = $1; s = $2; $1 = $2 = $3 = ""; sub(/^ +/, ""); print n "|" s "|" $0}')
+printf '\n%s1. Which drive has Ollie OS on it?%s\n\n' "$bold" "$reset"
+for i in "${!drives[@]}"; do
+    IFS='|' read -r dname dsize dmodel <<<"${drives[i]}"
+    mark=""
+    [[ $dname == "$disk" ]] && mark="   <-- Ollie OS is running from this one"
+    printf '  %d) %s  %s  %s%s\n' "$((i + 1))" "$dname" "$dsize" "${dmodel:-drive}" "$mark"
+done
+while :; do
+    read -rp "Type its number: " pick || exit 1
+    if [[ $pick =~ ^[0-9]+$ ]] && ((pick >= 1 && pick <= ${#drives[@]})); then break; fi
+    echo "Please type a number from 1 to ${#drives[@]}."
+done
+IFS='|' read -r chosen _ <<<"${drives[pick - 1]}"
+if [[ $chosen != "$disk" ]]; then
+    die "Ollie OS is running from $disk, not $chosen. Windows can only be added to the drive Ollie OS is running from. Start the computer from the Ollie OS drive you want (hold F12 / Option / Volume Down), then run $TITLE again."
+fi
+
+# --- 2. Windows 10 or 11? -------------------------------------------------------------------
+printf '\n%s2. Which Windows?%s\n\n  1) Windows 10   (no security updates from Microsoft any more)\n  2) Windows 11   (safer; needs about 64 GB of room)\n' "$bold" "$reset"
+while :; do
+    read -rp "Type 1 or 2: " w || exit 1
+    case "$w" in 1) VERSION=10 ;; 2) VERSION=11 ;; *) echo "Please type 1 or 2."; continue ;; esac
+    break
+done
+((VERSION == 11)) && MIN_GB=64 || MIN_GB=32
+
+# --- 3. Regular computer or ARM? ------------------------------------------------------------
+printf '\n%s3. Is this computer an ARM one?%s\n\n  1) No: a regular computer (Intel or AMD), like most laptops and desktops\n  2) Yes: ARM (some Windows tablets and laptops, Apple M-chip Macs)\n' "$bold" "$reset"
+while :; do
+    read -rp "Type 1 or 2: " a || exit 1
+    case "$a" in 1) arm=0 ;; 2) arm=1 ;; *) echo "Please type 1 or 2."; continue ;; esac
+    break
+done
+if ((arm)); then
+    die "Ollie OS is made for regular (Intel / AMD) computers, so it cannot run Windows for ARM next to it. Nothing was changed."
+fi
+if [[ "$(uname -m)" != x86_64 ]]; then
+    die "this computer says it is not a regular (x86_64) one (it says $(uname -m)). Windows $VERSION for regular computers would not run on it."
+fi
+
+# --- Does Ollie OS's drive have room to give? -------------------------------------------------
+# (The same checks as windows-plan makes at the next start; better to hear now.)
+num="$(cat "/sys/class/block/$name/partition" 2>/dev/null)"
+last="$(lsblk -lnpo NAME,TYPE "$disk" | awk '$2 == "part" {n++} END {print n}')"
+[[ -n $num && $num == "$last" ]] ||
+    die "Ollie OS's part is not the last one on $disk, so there is no room after it for Windows. Install Ollie OS again with the Installer and say yes to Windows."
+free="$(sudo -n btrfs filesystem usage -b / 2>/dev/null | awk '/Free \(estimated\)/ {print $3; exit}')"
+free_gb=$((${free:-0} / GiB))
+# Windows' room (N), Windows Setup's part (10), 2 to spare, 8 Ollie OS keeps
+# free, 1 (windows-plan wants more than that) and the download (7).
+max_gb=$((free_gb - 12 - 8 - 1 - ISO_GB))
+if ((max_gb < MIN_GB)); then
+    die "Ollie OS's part has only about $free_gb GB free. Windows $VERSION needs $MIN_GB GB of room plus about $((12 + 8 + 1 + ISO_GB)) GB to move around and download (about $((MIN_GB + 12 + 8 + 1 + ISO_GB)) GB free). Free some room (delete games you do not play) and try again."
+fi
+if [[ -e /boot/ollie-windows-plan ]]; then
+    die "Windows is already waiting for the next start. Restart the computer."
+fi
+
+# --- 4. How much room? ------------------------------------------------------------------------
+default=$DEFAULT_GB
+((default > max_gb)) && default=$max_gb
+((default < MIN_GB)) && default=$MIN_GB
+printf '\n%s4. How much room for Windows %s?%s\n\n' "$bold" "$VERSION" "$reset"
+printf 'Windows %s needs at least %s GB. Ollie OS can give up to %s GB.\n' "$VERSION" "$MIN_GB" "$max_gb"
+printf 'Games need a lot of room too, so leave Windows no more than it needs.\n\n'
+while :; do
+    read -rp "How many GB for Windows $VERSION? [$default] " gb || exit 1
+    gb="${gb:-$default}"
+    if [[ $gb =~ ^[0-9]+$ ]] && ((gb >= MIN_GB && gb <= max_gb)); then break; fi
+    echo "Please type a number from $MIN_GB to $max_gb."
+done
+
+cat <<EOF
+
+${bold}Before this starts${reset}
+  - Windows $VERSION is downloaded from Microsoft now (about 6 GB; it needs the
+    internet and takes a while).
+  - Ollie OS's part of $disk will be made $((gb + 12)) GB smaller, at the
+    next start of the computer ($gb GB of empty room for Windows, 10 GB for
+    Windows Setup, 2 GB spare). It keeps all its games and files.
+  - Making a part smaller is safe when the power stays on. Plug a laptop in
+    and ask a grown-up to say yes.
+  - Windows needs its own licence (a product key). It is not included.
+  - If this drive has BitLocker on, or you are not sure, stop here.
+
+EOF
+read -rp "Download Windows $VERSION and make room for it? Type yes: " answer || exit 1
+[[ ${answer,,} == yes || ${answer,,} == y ]] || {
+    printf '\nOK, nothing was changed.\n'
+    exit 0
+}
+
+# --- What Windows needs ------------------------------------------------------------------------
+say "Checking the tools Windows needs"
+need=()
+have sgdisk || need+=(gptfdisk)
+have sfdisk || need+=(util-linux)
+have wimlib-imagex || need+=(wimlib)
+have mkfs.fat || need+=(dosfstools)
+have mount.ntfs-3g || have ntfs-3g || need+=(ntfs-3g)
+have efibootmgr || need+=(efibootmgr)
+have btrfs || need+=(btrfs-progs)
+if ((${#need[@]})); then
+    echo "Adding: ${need[*]}"
+    sudo -n pacman -S --needed --noconfirm "${need[@]}" ||
+        die "the tools could not be added (no internet?). Try again, or bring Ollie OS up to date with the Ollie OS Updater first."
+fi
+
+say "Downloading Windows $VERSION from Microsoft"
+iso="/var/lib/ollie/windows-$VERSION.iso"
+if [[ -s $iso ]]; then
+    echo "It is already downloaded ($iso)."
+else
+    # (Microsoft's own page gives the link; it works for about a day.)
+    link="$(python3 -I "$files/usr/local/lib/ollie/get-windows.py" "$VERSION")" ||
+        die "Windows $VERSION could not be downloaded automatically (see above). Download the ISO in a browser on Microsoft's page (microsoft.com/software-download/windows$VERSION), save it as $iso, and run $TITLE again."
+    sudo -n install -d -m 0755 /var/lib/ollie || die "could not make /var/lib/ollie."
+    # A half-done download stays, so running this again goes on from where it stopped.
+    sudo -n curl -fL --retry 5 --retry-delay 5 -C - --progress-bar -o "$iso.part" "$link" ||
+        die "downloading Windows $VERSION stopped (is the internet on?). Run $TITLE again: it goes on from where it stopped."
+    size="$(stat -c %s "$iso.part" 2>/dev/null || echo 0)"
+    if ((size <= 2 * GiB)); then
+        sudo -n rm -f -- "$iso.part"
+        die "what came from Microsoft is too small to be Windows (it is not kept). Try again later."
+    fi
+    sudo -n mv "$iso.part" "$iso" || die "could not keep the download."
+fi
+
+say "Adding Install Windows to Ollie OS"
+# (Inside this app only you can read: root installs from a copy outside it.)
+tmp="$(mktemp -d)"
+trap 'rm -rf "${tmp:?}"' EXIT
+cp -a "$files/." "$tmp/" || die "could not unpack $TITLE (is the disk full?)."
+while IFS= read -r -d '' path; do
+    rel="${path#"$tmp/"}" mode=0644
+    [[ -x $path ]] && mode=0755
+    sudo -n install -D -m "$mode" "$path" "/$rel" || die "could not add /$rel to Ollie OS."
+done < <(find "$tmp" -type f -print0)
+have kbuildsycoca6 && kbuildsycoca6 >/dev/null 2>&1
+sudo -n systemctl daemon-reload
+sudo -n systemctl enable ollie-windows-plan.service >/dev/null 2>&1 ||
+    die "Ollie OS could not be told to make the room at the next start."
+
+say "Leaving the plan for the next start"
+# (The file is used once; ollie-windows-plan.service takes it away first.)
+printf 'MENU=1\nVERSION=%s\nGB=%s\n' "$VERSION" "$gb" | sudo -n tee /boot/ollie-windows-plan >/dev/null ||
+    die "the plan could not be written to the start-up part (/boot)."
+sudo -n sync
+
+printf '\n%s  Done.%s Now:\n' "$green$bold" "$reset"
+cat <<EOF2
+  1. Restart the computer (keep it plugged in). The first start takes a few
+     minutes more: Ollie OS's part is made smaller and the room is made.
+  2. At the next login "Install Windows" opens by itself. It puts the Windows $VERSION
+     you downloaded onto the drive and starts Windows Setup.
+  3. In Windows Setup pick "Unallocated Space": that is the room kept for
+     Windows. Ollie OS is not touched.
+  4. After that, Windows $VERSION is on the start-up menu next to Ollie OS: pick
+     it when the computer starts (4 seconds; the arrow keys stop it).
+
+  If it is not wanted any more before the restart: delete /boot/ollie-windows-plan
+  and $iso.
+
+Press Enter to close.
+EOF2
+read -r _ || true

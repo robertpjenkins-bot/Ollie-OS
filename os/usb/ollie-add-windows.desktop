@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Add Windows Updater
+Comment=Add Windows 10 or 11 next to Ollie OS
+Exec=ollie-add-windows
+Icon=ollie-os
+Terminal=false
+Categories=System;
