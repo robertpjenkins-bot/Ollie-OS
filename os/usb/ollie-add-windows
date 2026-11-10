@@ -201,18 +201,48 @@ if [[ -s $iso ]]; then
     echo "It is already downloaded ($iso)."
 else
     # (Microsoft's own page gives the link; it works for about a day.)
-    link="$(python3 -I "$files/usr/local/lib/ollie/get-windows.py" "$VERSION")" ||
-        die "Windows $VERSION could not be downloaded automatically (see above). Download the ISO in a browser on Microsoft's page (microsoft.com/software-download/windows$VERSION), save it as $iso, and run $TITLE again."
-    sudo -n install -d -m 0755 /var/lib/ollie || die "could not make /var/lib/ollie."
-    # A half-done download stays, so running this again goes on from where it stopped.
-    sudo -n curl -fL --retry 5 --retry-delay 5 -C - --progress-bar -o "$iso.part" "$link" ||
-        die "downloading Windows $VERSION stopped (is the internet on?). Run $TITLE again: it goes on from where it stopped."
-    size="$(stat -c %s "$iso.part" 2>/dev/null || echo 0)"
-    if ((size <= 2 * GiB)); then
-        sudo -n rm -f -- "$iso.part"
-        die "what came from Microsoft is too small to be Windows (it is not kept). Try again later."
+    if link="$(python3 -I "$files/usr/local/lib/ollie/get-windows.py" "$VERSION")"; then
+        :
+    else
+        # Microsoft turned the automatic download away. Do it with the browser
+        # instead, and pick the file up from Downloads by itself.
+        link=""
+        sudo -n install -d -m 0755 /var/lib/ollie || die "could not make /var/lib/ollie."
+        dl="$(xdg-user-dir DOWNLOAD 2>/dev/null)"
+        dl="${dl:-$HOME/Downloads}"
+        printf '\nMicrosoft would not let Windows be downloaded automatically (see above).\n'
+        printf 'The browser can: its page opens now. Pick English and 64-bit, press Download,\n'
+        printf 'and wait. When the file is in %s this goes on by itself (waits up to 60 minutes).\n\n' "$dl"
+        if [[ $VERSION == 10 ]]; then page="https://www.microsoft.com/software-download/windows10ISO"; else page="https://www.microsoft.com/software-download/windows11"; fi
+        xdg-open "$page" >/dev/null 2>&1 &
+        found=""
+        for ((i = 0; i < 720 && !${#found}; i++)); do
+            while IFS= read -r -d '' f; do
+                [[ -e $f.crdownload || -e $f.part ]] && continue
+                s1="$(stat -c %s "$f")"
+                ((s1 > 3 * GiB)) || continue
+                sleep 4
+                [[ "$(stat -c %s "$f")" == "$s1" ]] && { found="$f"; break; }
+            done < <(find "$dl" -maxdepth 1 -type f \( -iname 'win*.iso' \) -mmin -90 -print0 2>/dev/null)
+            [[ -n $found ]] || sleep 5
+        done
+        [[ -n $found ]] || die "no Windows .iso showed up in $dl. Run $TITLE again once it is downloaded."
+        echo "Found $found: keeping a copy for Windows Setup."
+        sudo -n cp --reflink=auto -- "$found" "$iso.part" || die "could not keep a copy of the download (is the disk full?)."
+        sudo -n mv "$iso.part" "$iso" || die "could not keep the download."
     fi
-    sudo -n mv "$iso.part" "$iso" || die "could not keep the download."
+    if [[ -n $link ]]; then
+        sudo -n install -d -m 0755 /var/lib/ollie || die "could not make /var/lib/ollie."
+        # A half-done download stays, so running this again goes on from where it stopped.
+        sudo -n curl -fL --retry 5 --retry-delay 5 -C - --progress-bar -o "$iso.part" "$link" ||
+            die "downloading Windows $VERSION stopped (is the internet on?). Run $TITLE again: it goes on from where it stopped."
+        size="$(stat -c %s "$iso.part" 2>/dev/null || echo 0)"
+        if ((size <= 2 * GiB)); then
+            sudo -n rm -f -- "$iso.part"
+            die "what came from Microsoft is too small to be Windows (it is not kept). Try again later."
+        fi
+        sudo -n mv "$iso.part" "$iso" || die "could not keep the download."
+    fi
 fi
 
 say "Adding Install Windows to Ollie OS"

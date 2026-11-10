@@ -11,6 +11,7 @@ download the ISO in a browser and pick the file instead).
 import json
 import re
 import sys
+import time
 import urllib.parse
 import urllib.request
 import uuid
@@ -44,9 +45,9 @@ def main():
 
     session = str(uuid.uuid4())
     try:  # lets the session ask for links (the page does this too)
-        get("https://vlscppe.microsoft.com/tags?org_id=y6jn8c31&session_id=" + session)
-    except OSError:
-        pass
+        get("https://vlscppe.microsoft.com/tags?org_id=y6jn8c31&session_id=" + session, page)
+    except OSError as e:
+        print("(note: Microsoft's session check was not reached: " + str(e) + ")", file=sys.stderr)
 
     q = {"profile": PROFILE, "ProductEditionId": edition, "SKU": "undefined",
          "friendlyFileName": "undefined", "Locale": "en-US", "sessionID": session}
@@ -72,7 +73,17 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except (OSError, ValueError) as e:
-        sys.exit("Could not reach Microsoft's download page: " + str(e))
+    # Microsoft sometimes turns a first try away ("rejected"): wait, and ask again
+    # with a new session (up to 3 tries).
+    for attempt in range(3):
+        try:
+            main()
+            break
+        except SystemExit as e:
+            if attempt < 2 and "refused" in str(e.code):
+                print("Microsoft said no; trying again in a few seconds...", file=sys.stderr)
+                time.sleep(6)
+                continue
+            raise
+        except (OSError, ValueError) as e:
+            sys.exit("Could not reach Microsoft's download page: " + str(e))
