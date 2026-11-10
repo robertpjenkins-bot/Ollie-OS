@@ -120,10 +120,22 @@ fi
 
 # --- Does Ollie OS's drive have room to give? -------------------------------------------------
 # (The same checks as windows-plan makes at the next start; better to hear now.)
-num="$(cat "/sys/class/block/$name/partition" 2>/dev/null)"
-last="$(lsblk -lnpo NAME,TYPE "$disk" | awk '$2 == "part" {n++} END {print n}')"
-[[ -n $num && $num == "$last" ]] ||
-    die "Ollie OS's part is not the last one on $disk, so there is no room after it for Windows. Install Ollie OS again with the Installer and say yes to Windows."
+# Windows' room is made at the end of the drive, so Ollie OS's part must be
+# the last one on it (the one that starts last; part numbers can be out of order).
+mystart="$(cat "/sys/class/block/$name/start" 2>/dev/null)"
+after="$(lsblk -bnlpo NAME,START,TYPE,SIZE,FSTYPE,LABEL "$disk" 2>/dev/null |
+    awk -v s="${mystart:-0}" '$3 == "part" && $2 + 0 > s + 0 {printf "    %s  %.1f GB  %s %s\n", $1, $4 / 1073741824, $5, $6}')"
+if [[ -z $mystart || -n $after ]]; then
+    msg="Ollie OS's part is not the last one on $disk, so there is no room after it for Windows."
+    if [[ -n $after ]]; then
+        msg+=$'\n\nThese come after it on the drive:\n'"$after"
+        msg+=$'\n\nIf you do not need them (they are empty, or you copied what is on them somewhere else), delete them'
+        msg+=$'\nwith the Disks app or KDE Partition Manager so Ollie OS\'s part is the last one, then run again.'
+        msg+=$'\nIf you do need them, Windows can go on another drive, or Ollie OS can be installed again'
+        msg+=$'\nwith the Installer, saying yes to Windows.'
+    fi
+    die "$msg"
+fi
 free="$(sudo -n btrfs filesystem usage -b / 2>/dev/null | awk '/Free \(estimated\)/ {print $3; exit}')"
 free_gb=$((${free:-0} / GiB))
 # Windows' room (N), Windows Setup's part (10), 2 to spare, 8 Ollie OS keeps

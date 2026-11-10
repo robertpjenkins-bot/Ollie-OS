@@ -34,8 +34,10 @@ src="$(findmnt -no SOURCE / | sed 's/\[.*//')"
 name="${src#/dev/}"
 disk="/dev/$(lsblk -no PKNAME "$src" | head -n 1)"
 num="$(cat "/sys/class/block/$name/partition")"
-last="$(lsblk -lnpo NAME,TYPE "$disk" | awk '$2 == "part" {n++} END {print n}')"
-[[ -n $num && $num == "$last" ]] || fail "Ollie OS's part is not the last one on $disk."
+# The last one is the one that starts last (part numbers can be out of order).
+mystart="$(cat "/sys/class/block/$name/start")"
+after="$(lsblk -bnlpo NAME,START,TYPE "$disk" | awk -v s="$mystart" '$3 == "part" && $2 + 0 > s + 0 {print $1}')"
+[[ -n $num && -n $mystart && -z $after ]] || fail "Ollie OS's part is not the last one on $disk (after it: $(echo $after))."
 ((gb >= (version == 11 ? 64 : 32))) || fail "$gb GB is too little for Windows $version."
 GiB=1073741824
 shrink=$((gb + 12)) # GiB: Windows, Windows Setup (10), and 2 to spare
