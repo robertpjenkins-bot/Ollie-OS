@@ -3,7 +3,7 @@
 # inside a computer), adds Windows 10 or 11 next to Ollie OS, the way the
 # Drive Writer and the Installer do it when you say yes to Windows. It asks:
 #   1. which drive has Ollie OS on it (it can only change the drive it is
-#      running from),
+#      running from; parts that come after Ollie OS's are left alone),
 #   2. Windows 10 or 11,
 #   3. a regular computer (Intel / AMD) or an ARM one (Ollie OS is for regular
 #      ones, so ARM Windows cannot be added: it says so),
@@ -120,21 +120,18 @@ fi
 
 # --- Does Ollie OS's drive have room to give? -------------------------------------------------
 # (The same checks as windows-plan makes at the next start; better to hear now.)
-# Windows' room is made at the end of the drive, so Ollie OS's part must be
-# the last one on it (the one that starts last; part numbers can be out of order).
+# Windows' room is made at the end of the drive. If other parts come after
+# Ollie OS's (one that starts later; part numbers can be out of order), it is
+# made right after Ollie OS's part instead, and those parts are not touched.
 mystart="$(cat "/sys/class/block/$name/start" 2>/dev/null)"
+[[ -n $mystart ]] || die "Ollie OS's part could not be looked up on $disk."
 after="$(lsblk -bnlpo NAME,START,TYPE,SIZE,FSTYPE,LABEL "$disk" 2>/dev/null |
-    awk -v s="${mystart:-0}" '$3 == "part" && $2 + 0 > s + 0 {printf "    %s  %.1f GB  %s %s\n", $1, $4 / 1073741824, $5, $6}')"
-if [[ -z $mystart || -n $after ]]; then
-    msg="Ollie OS's part is not the last one on $disk, so there is no room after it for Windows."
-    if [[ -n $after ]]; then
-        msg+=$'\n\nThese come after it on the drive:\n'"$after"
-        msg+=$'\n\nIf you do not need them (they are empty, or you copied what is on them somewhere else), delete them'
-        msg+=$'\nwith the Disks app or KDE Partition Manager so Ollie OS\'s part is the last one, then run again.'
-        msg+=$'\nIf you do need them, Windows can go on another drive, or Ollie OS can be installed again'
-        msg+=$'\nwith the Installer, saying yes to Windows.'
-    fi
-    die "$msg"
+    awk -v s="$mystart" '$3 == "part" && $2 + 0 > s + 0 {printf "    %s  %.1f GB  %s %s\n", $1, $4 / 1073741824, $5, $6}')"
+if [[ -n $after ]]; then
+    [[ "$(lsblk -dno PTTYPE "$disk")" == gpt ]] ||
+        die "$disk is not a GPT drive, so room for Windows cannot be made between its parts."
+    printf '\nThese come after Ollie OS on %s:\n%s\n' "$disk" "$after"
+    printf 'Their files are not touched. The room for Windows is made right after Ollie OS.\n'
 fi
 free="$(sudo -n btrfs filesystem usage -b / 2>/dev/null | awk '/Free \(estimated\)/ {print $3; exit}')"
 free_gb=$((${free:-0} / GiB))
