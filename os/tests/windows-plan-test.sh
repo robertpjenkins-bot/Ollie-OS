@@ -32,7 +32,7 @@ for ((run = 1; run <= runs; run++)); do
     tail_gb=$((RANDOM % 3 == 0 ? 100 + RANDOM % 80 : 4)) # free room at the end of the drive (sometimes)
     disk_gb=$((root_gb + after_gb + (old_setup ? 10 : 0) + tail_gb))
     truncate -s "${disk_gb}G" "$img"
-    args=(-n 1:2048:+512M -t 1:ef00 -c 1:OLLIE_BOOT -n 2:0:+${root_gb}G -t 2:8300 -c 2:OLLIE_ROOT)
+    args=(-n 1:2048:+512M -t 1:ef00 -c 1:OLLIE_BOOT -n "2:0:+${root_gb}G" -t 2:8300 -c 2:OLLIE_ROOT)
     ((after_gb)) && args+=(-n "3:0:+${after_gb}G" -t 3:0700 -c 3:data)
     ((old_setup)) && args+=(-n "4:0:+10G" -t 4:0700 -c 4:OLLIE_WINSETUP)
     sgdisk "${args[@]}" "$img" >/dev/null || { echo "could not make the image"; exit 1; }

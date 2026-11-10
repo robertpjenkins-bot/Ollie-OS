@@ -10,7 +10,6 @@ set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 air="$here/../profile/airootfs"
 upd="$here/../usb/ollie-add-windows"
-GiB=1073741824
 [[ $EUID -eq 0 ]] && command -v losetup >/dev/null && command -v mkfs.btrfs >/dev/null && command -v sgdisk >/dev/null || { echo "SKIP: needs root, losetup, mkfs.btrfs, sgdisk"; exit 0; }
 work="$(mktemp -d)"
 L0="" L1=""
@@ -36,7 +35,7 @@ world() {
     local root_gb="$1" tail_gb="$2"
     shift 2
     [[ -n $L0 ]] && { mountpoint -q "$work/mnt" && umount "$work/mnt"; losetup -d "$L0" 2>/dev/null; losetup -d "$L1" 2>/dev/null; L0="" L1=""; }
-    rm -rf "$work/fake" "$work/home"
+    rm -rf "${work:?}/fake" "${work:?}/home"
     local total=$((root_gb + tail_gb + 2)) a=(-n 1:2048:+512M -t 1:ef00 -c 1:OLLIE_BOOT -n "2:0:+${root_gb}G" -t 2:8300 -c 2:OLLIE_ROOT) x
     for x in "$@"; do
         IFS=: read -r n sz ty nm <<<"$x"
