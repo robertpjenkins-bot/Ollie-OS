@@ -1,0 +1,163 @@
+#!/bin/bash
+# shellcheck disable=SC2034 # WL_* are read by whoever sources this
+# The partition table side of adding Windows next to Ollie OS: where the room
+# for Windows (empty) and Windows Setup's part (OLLIE_WINSETUP, 10 GiB) go.
+# Used by windows-plan (at the start after the Add Windows Updater / the Drive
+# Writer / the Installer), by the Add Windows Updater (to say what is possible
+# before anything is changed) and by os/tests/windows-layout-test.sh, which
+# runs it on many made-up disks (image files: sgdisk and sfdisk work on those).
+#
+# Source it:   . windows-layout
+#   wl_free_blocks DISK            "START SECTORS" of each free block
+#   wl_largest_free DISK           the biggest one, or nothing
+#   wl_part_info DISK NUM          "START SECTORS" of a part
+#   wl_setup_parts DISK            numbers of the OLLIE_WINSETUP parts
+#   wl_remove_setup DISK           deletes those (old tries leave them)
+#   wl_delete_parts DISK ROOT N... deletes parts the person picked (never ROOT)
+#   wl_windows_parts DISK          numbers and kinds of parts that look like Windows
+#   wl_plan DISK ROOTNUM GB        makes the room, see below
+# All sector numbers are in the drive's logical sectors.
+#
+# wl_plan, when it runs (as root):
+#   1. takes away old OLLIE_WINSETUP parts (their room is free again),
+#   2. if one free block is big enough for GB + 10 + 1 GiB, Windows Setup's
+#      part goes at its start and the rest of it is Windows' room: Ollie OS's
+#      part is not touched,
+#   3. else Ollie OS's part (ROOTNUM) is made smaller (the caller's
+#      wl_hook_fs_shrink makes its file system smaller first, then the part;
+#      wl_hook_kernel tells the kernel) so the free block right after it is
+#      big enough, and Windows Setup's part goes at its start.
+# Either way nothing else on the drive is touched. Prints what it does; the
+# return value is 0 when the room is made.
+
+WL_GiB=1073741824
+WL_SETUP_GiB=10
+WL_ALIGN_B=1048576 # 1 MiB
+WL_SETUP_LABEL=OLLIE_WINSETUP
+
+# Hooks (windows-plan replaces them; they do nothing here).
+wl_hook_fs_shrink() { :; } # GIB: make Ollie OS's file system GIB smaller (return 1 if it cannot)
+wl_hook_kernel() { :; }    # DISK NUM: the kernel should look at the part table again
+
+wl__ss() { # logical sector size of DISK
+    sfdisk -F "$1" 2>/dev/null | awk '/^Sector size \(logical/ {print $4; exit}'
+}
+
+wl_free_blocks() {
+    sfdisk -F "$1" 2>/dev/null | awk '/^ *[0-9]+ +[0-9]+ +[0-9]+ / {print $1, $3}'
+}
+
+wl_largest_free() {
+    wl_free_blocks "$1" | sort -k2,2nr | head -n 1
+}
+
+wl__parts() { # wl__parts DISK: lines "NUM START SECTORS TYPE NAME" (spaces in names become _)
+    sfdisk -d "$1" 2>/dev/null | awk -v d="$1" '
+        index($1, d) == 1 {
+            rest = substr($1, length(d) + 1)
+            if (rest !~ /^p?[0-9]+$/) next
+            num = rest; sub(/^p/, "", num)
+            line = $0; s = z = t = nm = ""
+            if (match(line, /start= *[0-9]+/)) { s = substr(line, RSTART, RLENGTH); gsub(/[^0-9]/, "", s) }
+            if (match(line, /size= *[0-9]+/)) { z = substr(line, RSTART, RLENGTH); gsub(/[^0-9]/, "", z) }
+            if (match(line, /type=[0-9A-Fa-f-]+/)) { t = substr(line, RSTART + 5, RLENGTH - 5) }
+            if (match(line, /name="[^"]*"/)) { nm = substr(line, RSTART + 6, RLENGTH - 7); gsub(/ /, "_", nm) }
+            print num, s, z, toupper(t), (nm == "" ? "-" : nm) }'
+}
+
+wl_part_info() { # wl_part_info DISK NUM: "START SECTORS"
+    wl__parts "$1" | awk -v n="$2" '$1 == n {print $2, $3}'
+}
+
+wl_setup_parts() {
+    wl__parts "$1" | awk -v l="$WL_SETUP_LABEL" '$5 == l {print $1}'
+}
+
+wl_remove_setup() {
+    local disk="$1" n
+    for n in $(wl_setup_parts "$disk"); do
+        echo "Taking away an old Windows Setup part (number $n)."
+        sgdisk -d "$n" "$disk" >/dev/null || return 1
+        wl_hook_kernel "$disk" "$n"
+    done
+    return 0
+}
+
+# Deletes the given parts (after the person said so), never Ollie OS's own.
+wl_delete_parts() { # wl_delete_parts DISK ROOTNUM NUM...
+    local disk="$1" rootnum="$2" n
+    shift 2
+    for n in "$@"; do
+        [[ $n =~ ^[0-9]+$ ]] || { echo "$n is not a part number." >&2; return 1; }
+        [[ $n == "$rootnum" ]] && { echo "Ollie OS's own part is never deleted." >&2; return 1; }
+        sgdisk -d "$n" "$disk" >/dev/null || { echo "Part $n could not be deleted." >&2; return 1; }
+        wl_hook_kernel "$disk" "$n"
+    done
+    return 0
+}
+
+# Parts that look like Windows' own: the Microsoft reserved part, the Windows
+# recovery part. (NTFS / BitLocker parts need the file system looked at: the
+# Add Windows Updater does that, as a person is there to say which to delete.)
+wl_windows_parts() {
+    wl__parts "$1" | awk '
+        $4 == "E3C9E316-0B5C-4DB8-817D-F92DF00215AE" {print $1, "msr"}
+        $4 == "DE94BBA4-06D1-4D40-A16A-BFD50179D6AC" {print $1, "recovery"}'
+}
+
+wl__align_up() { # wl__align_up SECTOR SS: up to the next 1 MiB
+    local step=$((WL_ALIGN_B / $2))
+    echo $((($1 + step - 1) / step * step))
+}
+
+wl_plan() { # wl_plan DISK ROOTNUM GB
+    local disk="$1" rootnum="$2" gb="$3" ss need need_s blk start sectors
+    ss="$(wl__ss "$disk")"
+    [[ -n $ss && $ss -gt 0 ]] || { echo "Could not read the drive's sector size." >&2; return 1; }
+    need=$(((gb + WL_SETUP_GiB + 1) * WL_GiB))
+    need_s=$((need / ss))
+    WL_MODE="" WL_WS_START=""
+
+    wl_remove_setup "$disk" || { echo "An old Windows Setup part could not be taken away." >&2; return 1; }
+
+    blk="$(wl_largest_free "$disk")"
+    read -r start sectors <<<"$blk"
+    if [[ -n $blk ]] && ((sectors >= need_s)); then
+        WL_MODE=free
+        echo "There is free room on the drive already (a block of $((sectors * ss / WL_GiB)) GiB): Ollie OS's part is not made smaller."
+    else
+        # Shrink Ollie OS's part so the free block right after it is big enough.
+        local info rstart rsize rend adj shrink_part shrink_fs newsize
+        info="$(wl_part_info "$disk" "$rootnum")"
+        read -r rstart rsize <<<"$info"
+        [[ -n $rstart && -n $rsize ]] || { echo "Ollie OS's part ($rootnum) is not on $disk." >&2; return 1; }
+        rend=$((rstart + rsize))
+        adj=0
+        local bs bz
+        while read -r bs bz; do
+            [[ -n $bs ]] || continue
+            ((bs >= rend && bs - rend < WL_ALIGN_B / ss + 1)) && adj=$bz
+        done < <(wl_free_blocks "$disk")
+        # The free block after it will be adj + shrink_part GiB: it must hold
+        # GB + 10 + 1 GiB. The file system is made 1 GiB smaller still than
+        # the part, so the part never ends before the file system does.
+        shrink_part=$(((need - adj * ss + WL_GiB - 1) / WL_GiB))
+        ((shrink_part >= 1)) || shrink_part=1
+        shrink_fs=$((shrink_part + 1))
+        newsize=$((rsize - shrink_part * WL_GiB / ss))
+        ((newsize > 0)) || { echo "Ollie OS's part is too small to give $shrink_part GiB." >&2; return 1; }
+        WL_MODE=shrink WL_SHRINK_PART_GIB=$shrink_part WL_SHRINK_FS_GIB=$shrink_fs
+        echo "Making room for Windows: Ollie OS's part gets $shrink_fs GiB smaller."
+        wl_hook_fs_shrink "$shrink_fs" || { echo "Ollie OS's part could not be made smaller." >&2; return 1; }
+        echo ", $newsize" | sfdisk --no-reread --no-tell-kernel -q -N "$rootnum" "$disk" ||
+            { echo "The part table could not be changed." >&2; return 1; }
+        wl_hook_kernel "$disk" "$rootnum"
+        start=$((rstart + newsize))
+    fi
+    start="$(wl__align_up "$start" "$ss")"
+    sgdisk -n "0:$start:+${WL_SETUP_GiB}G" -t 0:0700 -c "0:$WL_SETUP_LABEL" "$disk" >/dev/null ||
+        { echo "The Windows Setup part could not be made." >&2; return 1; }
+    WL_WS_START=$start
+    wl_hook_kernel "$disk" new
+    return 0
+}

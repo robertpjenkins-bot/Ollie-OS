@@ -4,14 +4,16 @@
 # Drive Writer leaves its answers on the start-up part, /boot/ollie-windows-plan:
 #   MENU=1                 Windows (already on the computer) on the start-up
 #                          menu: ollie-windows-boot.service is switched on
-#   VERSION=10|11 GB=N     install Windows next to Ollie OS: Ollie OS's part
-#                          is made smaller (its btrfs, then the partition, at
-#                          the end of the drive), N GB are left empty for
-#                          Windows and a Windows Setup part (OLLIE_WINSETUP,
-#                          10 GB) is made after them, the way ollie-install
-#                          does it; then "Install Windows" opens at the next
-#                          login to get Windows Setup ready (it needs the
-#                          internet) and start it.
+#   VERSION=10|11 GB=N     install Windows next to Ollie OS: N GB are left
+#                          empty for Windows and a Windows Setup part
+#                          (OLLIE_WINSETUP, 10 GB) is made, by windows-layout:
+#                          from free room already on the drive if there is
+#                          enough, else Ollie OS's part is made smaller (its
+#                          btrfs, then the partition) and the room goes right
+#                          after it. Then "Install Windows" opens at the next
+#                          login to get Windows Setup ready (from the Windows
+#                          .iso the Add Windows Updater saved in /var/lib/ollie,
+#                          else from Microsoft) and start it.
 # The file is used once (taken away first, so this never runs twice). What
 # happens is in the journal (journalctl -u ollie-windows-plan).
 set -uo pipefail
@@ -28,46 +30,46 @@ if [[ $menu == 1 ]]; then
 fi
 [[ ($version == 10 || $version == 11) && -n $gb ]] || exit 0
 
-# Ollie OS's part: btrfs. Usually the last part on its drive: then the room
-# for Windows is at the end of the drive. When other parts come after it (a
-# data part you added), the room is made right after Ollie OS's part instead,
-# in the gap its shrinking leaves; those parts are not touched.
+# Ollie OS's part: btrfs. The room for Windows and Windows Setup's part are
+# made by windows-layout: from free room already on the drive if there is
+# enough (Ollie OS's part is not touched), else by making Ollie OS's part
+# smaller (its btrfs first, then the part), the room going right after it.
+# Other parts on the drive are never touched. Old Windows Setup parts (an
+# earlier try) are taken away first.
 src="$(findmnt -no SOURCE / | sed 's/\[.*//')"
 [[ "$(findmnt -no FSTYPE /)" == btrfs && -b $src ]] || fail "Ollie OS's part is not btrfs."
 name="${src#/dev/}"
 disk="/dev/$(lsblk -no PKNAME "$src" | head -n 1)"
 num="$(cat "/sys/class/block/$name/partition")"
-# The last one is the one that starts last (part numbers can be out of order).
-mystart="$(cat "/sys/class/block/$name/start")"
-[[ -n $num && -n $mystart ]] || fail "Ollie OS's part could not be looked up."
-after="$(lsblk -bnlpo NAME,START,TYPE "$disk" | awk -v s="$mystart" '$3 == "part" && $2 + 0 > s + 0 {print $1}')"
-if [[ -n $after ]]; then
-    [[ "$(lsblk -dno PTTYPE "$disk")" == gpt ]] || fail "$disk is not a GPT drive: the room for Windows cannot be made between its parts."
-    echo "Parts come after Ollie OS's ($(echo $after)): the room for Windows is made right after Ollie OS's part."
-fi
+[[ -n $num && -b $disk ]] || fail "Ollie OS's part could not be looked up."
+[[ "$(lsblk -dno PTTYPE "$disk")" == gpt ]] || fail "$disk is not a GPT drive: the room for Windows cannot be made on it."
 ((gb >= (version == 11 ? 64 : 32))) || fail "$gb GB is too little for Windows $version."
-GiB=1073741824
-shrink=$((gb + 12)) # GiB: Windows, Windows Setup (10), and 2 to spare
-free="$(btrfs filesystem usage -b / 2>/dev/null | awk '/Free \(estimated\)/ {print $3; exit}')"
-((${free:-0} > (shrink + 8) * GiB)) || fail "not enough free room in Ollie OS's part for $gb GB of Windows."
+# shellcheck source=/dev/null
+. "${OLLIE_WINDOWS_LAYOUT:-/usr/local/lib/ollie/windows-layout}"
 
-echo "Making room for Windows $version: Ollie OS's part gets $shrink GB smaller."
-btrfs filesystem resize "-${shrink}g" / >/dev/null || fail "Ollie OS's part could not be made smaller."
-# The partition: still 1 GB bigger than its btrfs now (start kept).
-size="$(cat "/sys/class/block/$name/size")" # sectors of 512 bytes
-newsize=$((size - (shrink - 1) * GiB / 512))
-echo ", $newsize" | sfdisk --no-reread --no-tell-kernel -q -N "$num" "$disk" || fail "the partition could not be made smaller."
-resizepart "$disk" "$num" "$newsize" || partx -u "$disk" 2>/dev/null
-if [[ -z $after ]]; then
-    # Windows Setup's part at the end of the drive; Windows' room before it, empty.
-    sgdisk -n "0:-10G:0" -t 0:0700 -c 0:OLLIE_WINSETUP "$disk" >/dev/null || fail "the Windows Setup part could not be made."
-else
-    # Windows Setup's part first in the gap Ollie OS's part left (on a 1 MiB
-    # boundary); Windows' room after it, empty, before the next part.
-    wsstart=$(((mystart + newsize + 2047) / 2048 * 2048))
-    sgdisk -n "0:$wsstart:+10G" -t 0:0700 -c 0:OLLIE_WINSETUP "$disk" >/dev/null || fail "the Windows Setup part could not be made."
-fi
-partx -a "$disk" 2>/dev/null
+wl_hook_fs_shrink() { # the btrfs gets $1 GiB smaller (when it has the room)
+    local free
+    free="$(btrfs filesystem usage -b / 2>/dev/null | awk '/Free \(estimated\)/ {print $3; exit}')"
+    ((${free:-0} > ($1 + 8) * 1073741824)) || { echo "not enough free room in Ollie OS's part for $gb GB of Windows." >&2; return 1; }
+    btrfs filesystem resize "-${1}g" / >/dev/null
+}
+wl_hook_kernel() { # wl_hook_kernel DISK NUM|new: tell the kernel about the part table change
+    local info ss
+    if [[ $2 == new ]]; then
+        partx -a "$1" 2>/dev/null || partx -u "$1" 2>/dev/null
+        return 0
+    fi
+    info="$(wl_part_info "$1" "$2")"
+    if [[ -n $info ]]; then # still there, smaller
+        ss="$(wl__ss "$1")"
+        resizepart "$1" "$2" $((${info#* } * ss / 512)) 2>/dev/null || partx -u "$1" 2>/dev/null
+    else # taken away
+        partx -d --nr "$2" "$1" 2>/dev/null
+    fi
+    return 0
+}
+
+wl_plan "$disk" "$num" "$gb" || fail "the room for Windows could not be made (see above)."
 udevadm settle 2>/dev/null
 
 install -D -m 0644 /dev/stdin /etc/ollie/windows <<EOF

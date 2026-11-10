@@ -31,7 +31,7 @@
 set -uo pipefail
 [[ $EUID -eq 0 ]] || exec sudo -n "$0" "$@"
 
-version="" iso="" part="" work=/var/tmp root=/ efi_vars=1
+version="" iso="" part="" work=/var/tmp root=/ efi_vars=1 label_check=1
 while (($#)); do
     case "$1" in
     --version) version="$2"; shift 2 ;;
@@ -40,6 +40,7 @@ while (($#)); do
     --work) work="$2"; shift 2 ;;
     --root) root="$2"; shift 2 ;;
     --no-efi-vars) efi_vars=""; shift ;;
+    --no-label-check) label_check=""; shift ;; # for tests: any block device
     *) echo "Unknown option $1" >&2; exit 2 ;;
     esac
 done
@@ -52,7 +53,7 @@ if [[ -z $part ]]; then
     bootdisk="$(lsblk -no PKNAME "$(findmnt -no SOURCE /boot | sed 's/\[.*//')" 2>/dev/null | head -n 1)"
     part="$(lsblk -lnpo NAME,PARTLABEL ${bootdisk:+"/dev/$bootdisk"} | awk '$2 == "OLLIE_WINSETUP" {print $1; exit}')"
 fi
-[[ -b $part && "$(lsblk -no PARTLABEL "$part")" == OLLIE_WINSETUP ]] ||
+[[ -b $part && ( -z $label_check || "$(lsblk -no PARTLABEL "$part")" == OLLIE_WINSETUP ) ]] ||
     die "this drive has no Windows Setup part. It is made when Ollie OS is installed with Windows: install Ollie OS again and say yes to Windows."
 disk="/dev/$(lsblk -no PKNAME "$part" | head -n 1)"
 partnum="$(cat "/sys/class/block/${part#/dev/}/partition")"
@@ -105,6 +106,14 @@ if [[ -f "$src/sources/idwbinfo.txt" ]] && grep -qi 'arm64' "$src/sources/idwbin
     die "this is Windows for ARM computers: this computer needs the x64 one."
 fi
 
+# --- Is the ISO whole? Checked before anything is put on the drive ------------------------------
+command -v wimlib-imagex >/dev/null || die "wimlib is missing (Update Ollie OS adds it)."
+progress 66 "Checking the Windows file is whole"
+for f in "$src"/sources/boot.wim "$image"; do
+    case "$f" in *.swm) wimlib-imagex verify "$f" --ref="${f%.swm}*.swm" >/dev/null 2>&1 ;; *) wimlib-imagex verify "$f" >/dev/null 2>&1 ;; esac ||
+        die "$(basename "$f") in the Windows file is damaged (a download that did not finish, or a bad copy). Download it again, or pick another file."
+done
+
 # --- Onto the Windows Setup part (FAT32, which every computer can start from) --------------------
 progress 72 "Putting Windows Setup on the drive"
 umount "$part" 2>/dev/null
@@ -123,7 +132,6 @@ elif ((size < 4 * 1024 * 1024 * 1024 - 1)); then
     cp "$image" "$tmp/setup/sources/" || die "copying Windows failed."
 else
     # Windows Setup reads it in parts too (install.swm, install2.swm...).
-    command -v wimlib-imagex >/dev/null || die "wimlib is missing (Update Ollie OS adds it)."
     if [[ $image == *.esd ]]; then
         wimlib-imagex export "$image" all "$work/ollie-install.wim" --compress=LZX >/dev/null || die "converting Windows failed."
         image="$work/ollie-install.wim"
@@ -133,6 +141,9 @@ else
 fi
 
 progress 94 "Getting Windows Setup ready"
+# (Only Windows 11 has the checks to bypass; Windows 10 gets no answer file, so
+# nothing there can be misread.)
+if [[ $version == 11 ]]; then
 cat >"$tmp/setup/autounattend.xml" <<'EOF'
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Ollie OS: Windows 11 installs on computers without TPM 2.0 or Secure Boot
@@ -151,6 +162,7 @@ cat >"$tmp/setup/autounattend.xml" <<'EOF'
   </settings>
 </unattend>
 EOF
+fi
 # Ollie OS's menu as Windows Boot Manager's program: with Secure Boot set up,
 # through shim (the menu alone is signed only with Ollie OS's own key).
 menu='\EFI\systemd\systemd-bootx64.efi'
@@ -167,6 +179,23 @@ EOF
 sed -i 's/$/\r/' "$tmp/setup/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd"
 sync
 umount "$tmp/setup"
+# --- Is the copy on the drive whole? Read back from the drive itself -------------------------------
+progress 90 "Checking the copy on the drive"
+mount -o ro "$part" "$tmp/setup" || die "the Windows Setup part could not be opened again to check it."
+bad=""
+while IFS= read -r -d '' f; do
+    case "$f" in ./sources/install.wim | ./sources/install.esd | ./sources/install*.swm | ./autounattend.xml) continue ;; esac
+    cmp -s "$src/$f" "$tmp/setup/$f" || { bad="$f"; break; }
+done < <(cd "$src" && find . -type f -print0)
+if [[ -z $bad ]]; then
+    if [[ -f "$tmp/setup/sources/install.swm" ]]; then
+        wimlib-imagex verify "$tmp/setup/sources/install.swm" --ref="$tmp/setup/sources/install*.swm" >/dev/null 2>&1 || bad="sources/install.swm"
+    elif [[ -f "$tmp/setup/sources/install.wim" ]]; then
+        wimlib-imagex verify "$tmp/setup/sources/install.wim" >/dev/null 2>&1 || bad="sources/install.wim"
+    fi
+fi
+umount "$tmp/setup"
+[[ -z $bad ]] || die "the copy of $bad on the drive is not the same as in the Windows file (is the drive failing, or full?). Nothing was started."
 
 # Noted for Ollie OS: the menu says "Windows 11" (or 10) once it is installed.
 install -D -m 0644 /dev/stdin "$root/etc/ollie/windows" <<EOF

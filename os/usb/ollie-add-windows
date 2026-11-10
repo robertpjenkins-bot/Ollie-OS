@@ -83,13 +83,6 @@ install_files() { # what Ollie OS needs for Windows, from inside this app
     return 0
 }
 
-# --- Is there already a Windows? ----------------------------------------------------------
-if [[ -f /boot/loader/entries/windows.conf ]]; then
-    printf '\nWindows is already on the start-up menu. Pick it when the computer starts.\n\nPress Enter to close.'
-    read -r _ || true
-    exit 0
-fi
-
 # --- 1. Windows 10 or 11? -------------------------------------------------------------------
 printf '\n%s1. Which Windows?%s\n\n  1) Windows 10   (no security updates from Microsoft any more)\n  2) Windows 11   (safer; needs about 64 GB of room)\n' "$bold" "$reset"
 while :; do
@@ -117,7 +110,7 @@ iso="/var/lib/ollie/windows-$VERSION.iso"
 # --- Is a Windows already on this computer? --------------------------------------------------
 # (Its Windows Boot Manager is in the computer's start-up list.) If so, it only
 # needs to be put on Ollie OS's start-up menu; no second Windows is needed.
-if sudo -n efibootmgr 2>/dev/null | grep -qi 'Windows Boot Manager'; then
+if [[ ! -f /boot/loader/entries/windows.conf ]] && sudo -n efibootmgr 2>/dev/null | grep -qi 'Windows Boot Manager'; then
     printf '\n%sWindows is already on this computer%s (its Windows Boot Manager is in the start-up list).\n' "$green$bold" "$reset"
     read -rp "Put it on Ollie OS's start-up menu now, instead of adding another Windows? [Y/n] " answer || exit 1
     if [[ ${answer,,} != n* ]]; then
@@ -175,7 +168,6 @@ fi
 src="$(findmnt -no SOURCE / | sed 's/\[.*//')"
 [[ "$(findmnt -no FSTYPE /)" == btrfs && -b $src ]] ||
     die "Ollie OS's part is not the kind this can make smaller (btrfs)."
-name="${src#/dev/}"
 disk="/dev/$(lsblk -no PKNAME "$src" | head -n 1)"
 mapfile -t drives < <(lsblk -dpno NAME,SIZE,TYPE,MODEL 2>/dev/null | awk '$3 == "disk" && $1 !~ /zram|loop|ram/ {n = $1; s = $2; $1 = $2 = $3 = ""; sub(/^ +/, ""); print n "|" s "|" $0}')
 printf '\n%s3. Which drive has Ollie OS on it?%s\n\n' "$bold" "$reset"
@@ -195,31 +187,143 @@ if [[ $chosen != "$disk" ]]; then
     die "Ollie OS is running from $disk, not $chosen. Windows can only be added to the drive Ollie OS is running from. Start the computer from the Ollie OS drive you want (hold F12 / Option / Volume Down), then run $TITLE again."
 fi
 
+# --- Windows already on this drive? -----------------------------------------------------------
+# The part table is looked at (and changed) by windows-layout, as root, from a
+# copy outside this app (root cannot read inside it).
+num="${src##*[!0-9]}" # the part number is the digits at the end of its name (sda2, nvme0n1p2)
+[[ -n $num ]] || die "Ollie OS's part could not be looked up on $disk."
+[[ "$(lsblk -dno PTTYPE "$disk")" == gpt ]] ||
+    die "$disk is not a GPT drive, so room for Windows cannot be made on it."
+[[ -r $files/usr/local/lib/ollie/windows-layout ]] || die "this copy of $TITLE is missing a piece (windows-layout)."
+layout="$(mktemp)"
+trap 'rm -f "${layout:?}"' EXIT
+cp "$files/usr/local/lib/ollie/windows-layout" "$layout" || die "could not unpack $TITLE (is the disk full?)."
+as_root() { # as_root FUNCTION ARGS...: a windows-layout function, as root (the kernel told with partx)
+    sudo -n bash -c '. "$0"; wl_hook_kernel() { if [[ $2 == new ]]; then partx -a "$1" >/dev/null 2>&1; else partx -d --nr "$2" "$1" >/dev/null 2>&1; fi; return 0; }; "$@"' "$layout" "$@"
+}
+field() { sed -n "s/.*\\b$2=\"\\([^\"]*\\)\".*/\\1/p" <<<"$1"; }
+
+# Parts that look like Windows' own on this drive: the Microsoft reserved part,
+# the recovery part, NTFS and BitLocker parts. (NTFS ones can also be your own
+# files: nothing is deleted without you picking it and typing DELETE.)
+winparts=() winlines=()
+while IFS= read -r line; do
+    pname="$(field "$line" NAME)" ptype="$(field "$line" PARTTYPE)" pfs="$(field "$line" FSTYPE)" plabel="$(field "$line" PARTLABEL)"
+    [[ -n $pname && $pname != "$src" ]] || continue
+    [[ $plabel == OLLIE_* ]] && continue
+    kind=""
+    case "${ptype,,}" in
+    e3c9e316-0b5c-4db8-817d-f92df00215ae) kind="Microsoft reserved (Windows)" ;;
+    de94bba4-06d1-4d40-a16a-bfd50179d6ac | de94bbab-06d1-4d40-a16a-bfd50179d6ac) kind="Windows recovery" ;;
+    esac
+    [[ -z $kind && ( $pfs == ntfs || $pfs == BitLocker ) ]] && kind="$pfs (Windows, or your own files)"
+    [[ -n $kind ]] || continue
+    pn="${pname##*[!0-9]}"
+    [[ -n $pn ]] || continue
+    winparts+=("$pn")
+    psize="$(numfmt --to=iec --suffix=B "$(field "$line" SIZE)" 2>/dev/null)"
+    winlines+=("$(printf '%s  %s  %s  %s' "$pn" "$pname" "$psize" "$kind${plabel:+  \"$plabel\"}")")
+done < <(lsblk -bnPpo NAME,PARTTYPE,FSTYPE,PARTLABEL,SIZE "$disk" 2>/dev/null | grep 'NAME="/dev/')
+if ((${#winparts[@]})) || [[ -f /boot/loader/entries/windows.conf ]]; then
+    printf '\n%sWindows seems to be on this drive already%s.\n' "$green$bold" "$reset"
+    if ((${#winparts[@]})); then
+        printf 'These parts look like Windows (part number, device, size, kind):\n'
+        printf '    %s\n' "${winlines[@]}"
+    fi
+    printf '\n  1) Delete Windows and install it fresh (you pick the parts; they are ERASED)\n'
+    printf '  2) Keep it: only put it on Ollie OS'"'"'s start-up menu\n  3) Stop\n'
+    while :; do
+        read -rp "Type 1, 2 or 3: " w2 || exit 1
+        [[ $w2 =~ ^[123]$ ]] && break
+        echo "Please type 1, 2 or 3."
+    done
+    case "$w2" in
+    3)
+        printf '\nOK, nothing was changed.\n'
+        exit 0
+        ;;
+    2)
+        say "Putting Windows on Ollie OS's start-up menu"
+        install_files
+        sudo -n /usr/local/bin/ollie-windows-boot || die "Windows could not be put on the start-up menu (see above)."
+        printf '\n%s  Done.%s Pick "Windows Boot Manager" in the start-up menu. From Ollie OS: apps menu > System > Restart into Windows.\n\nPress Enter to close.' "$green$bold" "$reset"
+        read -r _ || true
+        exit 0
+        ;;
+    1)
+        ((${#winparts[@]})) || die "no parts that look like Windows were found, so there is nothing to delete here."
+        while :; do
+            read -rp "Type the part numbers to delete, like 3,4,5 (all: every one listed; n: stop): " picks || exit 1
+            if [[ ${picks,,} == n* ]]; then
+                printf '\nOK, nothing was changed.\n'
+                exit 0
+            fi
+            [[ ${picks,,} == all ]] && picks="${winparts[*]}"
+            picks="${picks//,/ }"
+            ok=1 todel=()
+            for p in $picks; do
+                [[ " ${winparts[*]} " == *" $p "* ]] || {
+                    echo "$p is not one of the listed parts."
+                    ok=""
+                    break
+                }
+                todel+=("$p")
+            done
+            [[ -n $ok && ${#todel[@]} -gt 0 ]] && break
+        done
+        printf '\n%sThese will be ERASED, with everything on them:%s\n' "$red$bold" "$reset"
+        for l in "${winlines[@]}"; do
+            for p in "${todel[@]}"; do [[ $l == "$p "* ]] && printf '    %s\n' "$l"; done
+        done
+        read -rp "Type DELETE to erase them: " answer || exit 1
+        if [[ $answer != DELETE ]]; then
+            printf '\nOK, nothing was changed.\n'
+            exit 0
+        fi
+        for p in "${todel[@]}"; do
+            for dev in "${disk}${p}" "${disk}p${p}"; do
+                [[ -b $dev ]] || continue
+                if findmnt -rn -S "$dev" >/dev/null 2>&1; then
+                    sudo -n umount "$dev" || die "$dev is in use: close what is using it, then try again."
+                fi
+            done
+        done
+        say "Deleting the parts"
+        as_root wl_delete_parts "$disk" "$num" "${todel[@]}" || die "the parts could not be deleted (see above)."
+        # Windows' start-up files and Ollie OS's note of it go too (the new Windows makes its own).
+        sudo -n rm -rf /boot/EFI/Microsoft /boot/loader/entries/windows.conf /etc/ollie/windows
+        echo "Deleted. The room they held is free now."
+        ;;
+    esac
+fi
+
 # --- Does Ollie OS's drive have room to give? -------------------------------------------------
 # (The same checks as windows-plan makes at the next start; better to hear now.)
-# Windows' room is made at the end of the drive. If other parts come after
-# Ollie OS's (one that starts later; part numbers can be out of order), it is
-# made right after Ollie OS's part instead, and those parts are not touched.
-mystart="$(cat "/sys/class/block/$name/start" 2>/dev/null)"
-[[ -n $mystart ]] || die "Ollie OS's part could not be looked up on $disk."
-after="$(lsblk -bnlpo NAME,START,TYPE,SIZE,FSTYPE,LABEL "$disk" 2>/dev/null |
-    awk -v s="$mystart" '$3 == "part" && $2 + 0 > s + 0 {printf "    %s  %.1f GB  %s %s\n", $1, $4 / 1073741824, $5, $6}')"
-if [[ -n $after ]]; then
-    [[ "$(lsblk -dno PTTYPE "$disk")" == gpt ]] ||
-        die "$disk is not a GPT drive, so room for Windows cannot be made between its parts."
-    printf '\nThese come after Ollie OS on %s:\n%s\n' "$disk" "$after"
-    printf 'Their files are not touched. The room for Windows is made right after Ollie OS.\n'
-fi
-free="$(sudo -n btrfs filesystem usage -b / 2>/dev/null | awk '/Free \(estimated\)/ {print $3; exit}')"
-free_gb=$((${free:-0} / GiB))
-# Windows' room (N), Windows Setup's part (10), 2 to spare, 8 Ollie OS keeps
-# free, 1 (windows-plan wants more than that) and the download (7).
-max_gb=$((free_gb - 12 - 8 - 1 - ISO_GB))
-if ((max_gb < MIN_GB)); then
-    die "Ollie OS's part has only about $free_gb GB free. Windows $VERSION needs $MIN_GB GB of room plus about $((12 + 8 + 1 + ISO_GB)) GB to move around and download (about $((MIN_GB + 12 + 8 + 1 + ISO_GB)) GB free). Free some room (delete games you do not play) and try again."
-fi
+# Windows' room is made from free room on the drive when one block is big
+# enough (Ollie OS's part is not touched), else by making Ollie OS's part
+# smaller; parts after it are never touched.
 if [[ -e /boot/ollie-windows-plan ]]; then
     die "Windows is already waiting for the next start. Restart the computer."
+fi
+read -r rstart _ <<<"$(as_root wl_part_info "$disk" "$num")"
+ss="$(as_root wl__ss "$disk")"
+after="$(as_root wl__parts "$disk" | awk -v s="${rstart:-0}" -v ss="${ss:-512}" '$2 + 0 > s + 0 {printf "    part %s  %.1f GB  %s\n", $1, $3 * ss / 1073741824, ($5 == "-" ? "" : $5)}')"
+if [[ -n $after ]]; then
+    printf '\nThese come after Ollie OS on %s (they are not touched):\n%s\n' "$disk" "$after"
+fi
+read -r _ big_s <<<"$(as_root wl_largest_free "$disk")"
+big_gb=$(((${big_s:-0} * ${ss:-512}) / GiB))
+((big_gb > 0)) && printf 'The biggest free room on %s is about %s GB.\n' "$disk" "$big_gb"
+free="$(sudo -n btrfs filesystem usage -b / 2>/dev/null | awk '/Free \(estimated\)/ {print $3; exit}')"
+free_gb=$((${free:-0} / GiB))
+# From free room: GB + 10 (Windows Setup's part) + 1. By shrinking Ollie OS's
+# part: the same, and 12 + 8 + 1 more kept in Ollie OS's part, and the download.
+max_free=$((big_gb - 11))
+max_shrink=$((free_gb - 12 - 8 - 1 - ISO_GB))
+max_gb=$max_free
+((max_shrink > max_gb)) && max_gb=$max_shrink
+if ((max_gb < MIN_GB)); then
+    die "Windows $VERSION needs $MIN_GB GB of room. This drive has about $big_gb GB free in one piece, and Ollie OS's part has about $free_gb GB free (it needs $((MIN_GB + 12 + 8 + 1 + ISO_GB)) GB free to be made smaller and still download Windows). Free some room (delete games you do not play, or delete parts you do not need) and try again."
 fi
 
 # --- 4. How much room? ------------------------------------------------------------------------
@@ -247,13 +351,19 @@ else
     getline="Windows $VERSION is downloaded from Microsoft now (about 6 GB; it needs the internet and takes a while)."
     ask="Download Windows $VERSION and make room for it? Type yes: "
 fi
+if ((gb + 11 <= big_gb)); then
+    roomline="Windows gets $gb GB of the free room already on $disk (and 10 GB for Windows Setup), at the
+    next start of the computer. Ollie OS's part is not made smaller."
+else
+    roomline="Ollie OS's part of $disk will be made up to $((gb + 12)) GB smaller, at the
+    next start of the computer ($gb GB of empty room for Windows, 10 GB for
+    Windows Setup, 2 GB spare). It keeps all its games and files."
+fi
 cat <<EOF
 
 ${bold}Before this starts${reset}
   - $getline
-  - Ollie OS's part of $disk will be made $((gb + 12)) GB smaller, at the
-    next start of the computer ($gb GB of empty room for Windows, 10 GB for
-    Windows Setup, 2 GB spare). It keeps all its games and files.
+  - $roomline
   - Making a part smaller is safe when the power stays on. Plug a laptop in
     and ask a grown-up to say yes.
   - Windows needs its own licence (a product key). It is not included.

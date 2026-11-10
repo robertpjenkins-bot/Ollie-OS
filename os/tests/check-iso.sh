@@ -123,7 +123,7 @@ check "kdialog for the first-start questions" test -x "$r/usr/bin/kdialog"
 check "chpasswd for the first-start account" test -x "$r/usr/bin/chpasswd"
 check "installer asks for no password" bash -c "! grep -q 'read -rsp' '$r/usr/local/bin/ollie-install'"
 check "Installing Windows too: Setup helper, its download and the Install Windows app" bash -c "test -x '$r/usr/local/bin/ollie-windows-setup' && test -x '$r/usr/local/lib/ollie/get-windows.py' && test -x '$r/usr/local/bin/ollie-windows-install' && test -f '$r/usr/local/share/ollie/ollie-windows-install.desktop' && grep -q OLLIE_INSTALL_WINDOWS_VERSION '$r/usr/local/bin/ollie-install-gui'"
-check "Windows asked for in the Drive Writer: room made at the first start (ollie-windows-plan)" bash -c "test -x '$r/usr/local/lib/ollie/windows-plan' && test -L '$r/etc/systemd/system/multi-user.target.wants/ollie-windows-plan.service'"
+check "Windows asked for in the Drive Writer: room made at the first start (ollie-windows-plan)" bash -c "test -x '$r/usr/local/lib/ollie/windows-plan' && test -x '$r/usr/local/lib/ollie/windows-layout' && test -L '$r/etc/systemd/system/multi-user.target.wants/ollie-windows-plan.service'"
 check "efibootmgr and wimlib for Windows Setup" bash -c "test -x '$r/usr/bin/efibootmgr' && test -x '$r/usr/bin/wimlib-imagex'"
 check "translations kept (NoExtract removed)" compgen -G "$r/usr/share/locale/de/LC_MESSAGES/*"
 

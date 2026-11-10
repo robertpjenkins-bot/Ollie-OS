@@ -149,6 +149,7 @@ file_permissions=(
   ["/usr/local/bin/ollie-windows-install"]="0:0:755"
   ["/usr/local/lib/ollie/get-windows.py"]="0:0:755"
   ["/usr/local/lib/ollie/windows-plan"]="0:0:755"
+  ["/usr/local/lib/ollie/windows-layout"]="0:0:755"
   ["/usr/local/bin/ollie-wallpaper-maker"]="0:0:755"
   ["/usr/local/bin/ollie-rename"]="0:0:755"
   ["/usr/local/bin/ollie-download-tracker"]="0:0:755"

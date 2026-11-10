@@ -13,7 +13,7 @@ Made by biobro (age 8). A gaming computer built on Arch Linux, with Steam, Minec
 
 ### Also new since 1.5
 - **Install Windows too:** the installer asks if you want Windows 10 or 11 next to Ollie OS.
-- **Add Windows Updater** (**Ollie-OS-Add-Windows-Updater-x86_64.AppImage**): already have Ollie OS? It asks which drive, Windows 10 or 11, and regular or ARM computer, downloads Windows, makes room for it (you pick how much) and opens Install Windows after a restart.
+- **Add Windows Updater** (**Ollie-OS-Add-Windows-Updater-x86_64.AppImage**): already have Ollie OS? It asks Windows 10 or 11 and regular or ARM computer, looks for a Windows file in Downloads (or downloads one), tells you if Windows is already there (and lets you delete it to install fresh, only the parts you pick and only after you type DELETE), makes room for it (free room first, else Ollie OS's part is made smaller), and opens Install Windows after a restart. Windows Setup is checked for damaged files before it starts.
 - **No more robot voice.**
 - **Pick your own apps:** Sticker Maker, Spelling Bee, Ollie Animator, Sound Board, World Explorer and Space Explorer are in the App Center.
 - **New look:** real icons instead of emoji, shorter text, each app with its own style.

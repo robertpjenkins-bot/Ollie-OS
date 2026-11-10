@@ -247,7 +247,7 @@ build_add_windows_updater() {
     local appdir="$out/OllieAddWindows.AppDir" f
     rm -rf "$appdir"
     install -D -m 0755 "$here/ollie-add-windows" "$appdir/usr/bin/ollie-add-windows"
-    for f in usr/local/lib/ollie/windows-plan usr/local/lib/ollie/get-windows.py \
+    for f in usr/local/lib/ollie/windows-plan usr/local/lib/ollie/windows-layout usr/local/lib/ollie/get-windows.py \
         etc/systemd/system/ollie-windows-plan.service \
         usr/local/bin/ollie-windows-setup usr/local/bin/ollie-windows-install \
         usr/local/bin/ollie-windows-boot usr/local/bin/ollie-restart-windows \
