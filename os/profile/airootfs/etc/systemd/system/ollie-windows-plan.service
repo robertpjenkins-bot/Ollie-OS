@@ -6,10 +6,16 @@ Description=Get the room for Windows ready (asked for in the Drive Writer)
 ConditionPathExists=/boot/ollie-windows-plan
 RequiresMountsFor=/boot
 After=local-fs.target
+# The login screen waits for it (the computer may restart into Windows Setup).
+Before=display-manager.service sddm.service
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/lib/ollie/windows-plan
+# Putting Windows Setup on the drive takes minutes, and shows on the console.
+TimeoutStartSec=infinity
+StandardOutput=journal+console
+StandardError=journal+console
 
 [Install]
 WantedBy=multi-user.target

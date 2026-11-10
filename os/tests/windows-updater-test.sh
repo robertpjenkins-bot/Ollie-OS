@@ -12,12 +12,13 @@ air="$here/../profile/airootfs"
 upd="$here/../usb/ollie-add-windows"
 [[ $EUID -eq 0 ]] && command -v losetup >/dev/null && command -v mkfs.btrfs >/dev/null && command -v sgdisk >/dev/null || { echo "SKIP: needs root, losetup, mkfs.btrfs, sgdisk"; exit 0; }
 work="$(mktemp -d)"
-L0="" L1=""
+L0="" L1="" L2=""
 cleanup() {
     mountpoint -q "$work/mnt" && umount "$work/mnt"
     [[ -n $L0 ]] && losetup -d "$L0" 2>/dev/null
     [[ -n $L1 ]] && losetup -d "$L1" 2>/dev/null
-    rm -f /dev/ollietest0
+    [[ -n ${L2:-} ]] && losetup -d "$L2" 2>/dev/null
+    rm -f /dev/ollietest0 /dev/ollietest1
     rm -rf "$work"
 }
 trap cleanup EXIT
@@ -36,6 +37,7 @@ world() {
     shift 2
     [[ -n $L0 ]] && { mountpoint -q "$work/mnt" && umount "$work/mnt"; losetup -d "$L0" 2>/dev/null; losetup -d "$L1" 2>/dev/null; L0="" L1=""; }
     rm -rf "${work:?}/fake" "${work:?}/home"
+    [[ -n ${L2:-} ]] && { losetup -d "$L2" 2>/dev/null; L2=""; rm -f /dev/ollietest1 "$work/disk2.img"; }
     local total=$((root_gb + tail_gb + 2)) a=(-n 1:2048:+512M -t 1:ef00 -c 1:OLLIE_BOOT -n "2:0:+${root_gb}G" -t 2:8300 -c 2:OLLIE_ROOT) x
     for x in "$@"; do
         IFS=: read -r n sz ty nm <<<"$x"
@@ -50,9 +52,9 @@ world() {
     rs=$(partline 2 | sed -n 's/.*start= *\([0-9]*\),.*/\1/p')
     rz=$(partsize 2)
     L0="$(losetup -f --show "$work/disk.img")"
-    L1="$(losetup -f --show -o $((rs * 512)) --sizelimit $((rz * 512)) "$work/disk.img")"
+    L1="$(losetup -f --show -o $((rs * 512)) "$work/disk.img")" # (no size limit: the file system can be made bigger, as the part is)
     ln -sf "$L0" /dev/ollietest0 # a name without "loop" in it (the updater skips loop devices when it lists drives)
-    mkfs.btrfs -q -f "$L1" && mkdir -p "$work/mnt" && mount "$L1" "$work/mnt" || { echo "SKIP: cannot mount a loop btrfs here"; exit 0; }
+    mkfs.btrfs -q -f -b $((rz * 512)) "$L1" && mkdir -p "$work/mnt" && mount "$L1" "$work/mnt" || { echo "SKIP: cannot mount a loop btrfs here"; exit 0; }
     head -c 20000000 /dev/urandom >"$work/mnt/data.bin"
     mkdir -p "$work/fake/boot/loader/entries" "$work/fake/usr/local/bin" "$work/fake/sys/firmware/efi" "$work/fake/var/lib/ollie" "$work/fake/etc/ollie" \
         "$work/home/Downloads" "$work/share/airootfs" "$work/bin" "$work/fake/etc/xdg/autostart" "$work/fake/usr/share/applications"
@@ -96,12 +98,14 @@ case "\$*" in *FSTYPE*) echo btrfs;; *-S*) exit 1;; *) echo $L1;; esac
 STUB
     cat >"$b/lsblk" <<STUB
 #!/bin/bash
+img="$work/disk.img" dev=/dev/ollietest0
+for a in "\$@"; do case "\$a" in /dev/ollietest0) img="$work/disk.img" dev=/dev/ollietest0 ;; /dev/ollietest1) img="$work/disk2.img" dev=/dev/ollietest1 ;; esac; done
 case "\$*" in
 *PKNAME*) echo ollietest0 ;;
 *PTTYPE*) echo gpt ;;
-*NAME,SIZE,TYPE,MODEL*) echo "/dev/ollietest0 500G disk Test drive" ;;
+*NAME,SIZE,TYPE,MODEL*) echo "/dev/ollietest0 500G disk Test drive"; [[ -f "$work/disk2.img" ]] && echo "/dev/ollietest1 200G disk Other drive" ;;
 *PARTTYPE*) # the parts, from the image
-    sfdisk -d "$work/disk.img" | awk -v d="/dev/ollietest0" -v img="$work/disk.img" 'index(\$1, img) == 1 {
+    sfdisk -d "\$img" | awk -v d="\$dev" -v img="\$img" 'index(\$1, img) == 1 {
         n = substr(\$1, length(img) + 1); line = \$0; t = ""; z = 0; nm = ""
         if (match(line, /type=[0-9A-Fa-f-]+/)) t = tolower(substr(line, RSTART + 5, RLENGTH - 5))
         if (match(line, /size= *[0-9]+/)) { z = substr(line, RSTART, RLENGTH); gsub(/[^0-9]/, "", z) }
@@ -110,9 +114,24 @@ case "\$*" in
         printf "NAME=\"%sp%s\" PARTTYPE=\"%s\" FSTYPE=\"%s\" PARTLABEL=\"%s\" SIZE=\"%d\"\n", d, n, t, fs, nm, z * 512 }' ;;
 esac
 STUB
+    cat >"$b/fs-grow-stub" <<STUB
+#!/bin/bash
+# "resize max": the file system fills its part (what the kernel would show as the device size)
+sz=\$(sfdisk -d "$work/disk.img" | sed -n 's/^.*disk.img2 : start= *[0-9]*, size= *\([0-9]*\),.*/\1/p')
+btrfs filesystem resize \$((sz * 512)) "$work/mnt" >/dev/null
+STUB
     printf '#!/bin/sh\nexit 0\n' >"$b/partx"
     printf '#!/bin/sh\nexit 0\n' >"$b/resizepart"
     printf '#!/bin/sh\nexit 0\n' >"$b/udevadm"
+    printf '#!/bin/sh\necho "$*" >>"%s/systemctl.log"\nexit 0\n' "$work" >"$b/systemctl"
+    cat >"$b/setup-stub" <<STUB
+#!/bin/bash
+echo "\$*" >>"$work/setup.log"
+echo "PROGRESS 10 Checking"
+if [[ -n \${SETUP_FAIL:-} ]]; then echo "Error: the Windows file is damaged" >&2; exit 1; fi
+echo "PROGRESS 100 Windows Setup is ready"
+echo "NEXT-START Windows Setup"
+STUB
     printf '#!/bin/sh\nexit 1\n' >"$b/xdg-user-dir"
     printf '#!/bin/sh\nexit 0\n' >"$b/xdg-open"
     printf '#!/bin/sh\nexit 0\n' >"$b/kbuildsycoca6"
@@ -122,7 +141,7 @@ STUB
 echo "https://example.invalid/windows.iso"
 STUB
     chmod +x "$b"/*
-    rm -f "$work/curl.log" "$work/boot.log" "$work/efibootmgr.out"
+    rm -f "$work/curl.log" "$work/boot.log" "$work/efibootmgr.out" "$work/setup.log" "$work/systemctl.log"
 }
 
 # run_updater "INPUT LINES"
@@ -139,7 +158,7 @@ run_updater() {
     chmod +x "$work/upd.sh"
     printf '#!/bin/sh\necho "ollie-windows-boot ran" >>"%s/boot.log"\n' "$work" >"$work/bin/ollie-windows-boot-stub"
     chmod +x "$work/bin/ollie-windows-boot-stub"
-    printf '%b' "$1" | HOME="$work/home" PATH="$work/bin:$PATH" OLLIE_WINDOWS_IN_TERMINAL=1 OLLIE_APPS_SHARE="$work/share" timeout 120 "$work/upd.sh" >"$work/upd.out" 2>&1
+    printf '%b' "$1" | WL_BOOT="$work/fake/boot" WL_ETC="$work/fake/etc" HOME="$work/home" PATH="$work/bin:$PATH" OLLIE_WINDOWS_IN_TERMINAL=1 OLLIE_APPS_SHARE="$work/share" timeout 120 "$work/upd.sh" >"$work/upd.out" 2>&1
     return $?
 }
 
@@ -149,6 +168,8 @@ run_plan() {
         -e "s#/sys/class/block/\$name/partition#$work/partnum#" \
         -e "s#btrfs filesystem usage -b /#btrfs filesystem usage -b $work/mnt#" \
         -e "s#resize \"-\${1}g\" /#resize \"-\${1}g\" $work/mnt#" \
+        -e "s#/usr/local/bin/ollie-windows-setup#$work/bin/setup-stub#" \
+        -e "s#/var/lib/ollie/#$work/fake/var/lib/ollie/#g" \
         -e "s#/etc/ollie/windows#$work/fake/etc/ollie/windows#; s#/usr/share/applications/#$work/fake/usr/share/applications/#; s#/etc/xdg/autostart/#$work/fake/etc/xdg/autostart/#; s#/usr/local/share/ollie/#$work/share/airootfs/usr/local/share/ollie/#g" \
         "$air/usr/local/lib/ollie/windows-plan" >"$work/plan.sh"
     chmod +x "$work/plan.sh"
@@ -202,7 +223,24 @@ if want shrink; then
     check_common
     [[ "$(partline 3)" == "$before3" ]] || bad "the data part changed"
     grep -q 'Making room' "$work/plan.out" || bad "it did not make Ollie OS's part smaller"
-    report "full drive: Ollie OS made smaller, data part after it kept"
+    grep -q -- "--version 10 --iso $work/fake/var/lib/ollie/windows-10.iso" "$work/setup.log" 2>/dev/null || bad "the start did not put Windows Setup on the drive (setup.log: $(cat "$work/setup.log" 2>/dev/null))"
+    grep -q '^reboot' "$work/systemctl.log" 2>/dev/null || bad "it did not restart into Windows Setup"
+    [[ -e $work/fake/var/lib/ollie/windows-10.iso ]] && bad "the saved Windows file was not removed after it was on the drive"
+    report "full drive: Ollie OS made smaller, data part after it kept, Windows Setup put on, restart"
+fi
+
+# ----- 1b. putting Windows Setup on the drive fails: no restart, Install Windows at login -----
+if want autofail; then
+    world 100 150
+    truncate -s 3500M "$work/home/Downloads/Win10_22H2_English_x64v1.iso"
+    run_updater '1\n1\n\n1\n40\nyes\n\n' || bad "updater failed ($?)"
+    SETUP_FAIL=1 run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"
+    check_common
+    grep -q '^reboot' "$work/systemctl.log" 2>/dev/null && bad "it restarted although Windows Setup was not ready"
+    [[ -s $work/fake/var/lib/ollie/windows-10.iso ]] || bad "the saved Windows file was removed although it did not work"
+    [[ -f $work/fake/etc/xdg/autostart/ollie-windows-install.desktop ]] || bad "Install Windows would not open at login"
+    grep -q "could not be got ready by itself" "$work/plan.out" || bad "no word about it in the log"
+    report "Windows Setup not ready: no restart, the file kept, Install Windows at login"
 fi
 
 # ----- 2. free room at the end of the drive: Ollie OS is not touched -----
@@ -295,6 +333,85 @@ if want download; then
     [[ -s $work/fake/var/lib/ollie/windows-10.iso ]] || bad "the download was not kept"
     grep -q "downloaded from Microsoft now" "$work/upd.out" || bad "the text before the last question does not say it downloads"
     report "no file in Downloads: downloaded from Microsoft"
+fi
+
+# run_remover "INPUT LINES"
+run_remover() {
+    sed -e "s#/usr/local/bin/ollie-first-setup#$work/fake/usr/local/bin/ollie-first-setup#" \
+        -e "s#btrfs filesystem resize max /#fs-grow-stub#" \
+        -e "s#/var/lib/ollie#$work/fake/var/lib/ollie#g" \
+        -e "s#/boot/ollie-windows-plan#$work/fake/boot/ollie-windows-plan#g" \
+        -e "s#/etc/xdg/autostart#$work/fake/etc/xdg/autostart#g" \
+        -e 's|^num="\${src##\*\[!0-9\]}"$|num=2|' \
+        "$here/../usb/ollie-windows-remover" >"$work/rem.sh"
+    chmod +x "$work/rem.sh"
+    printf '%b' "$1" | WL_BOOT="$work/fake/boot" WL_ETC="$work/fake/etc" HOME="$work/home" PATH="$work/bin:$PATH" OLLIE_WINDOWS_IN_TERMINAL=1 OLLIE_APPS_SHARE="$work/share" timeout 120 "$work/rem.sh" >"$work/rem.out" 2>&1
+    return $?
+}
+report_rem() { upd_out_saved="$work/upd.out"; cp "$work/rem.out" "$work/upd.out"; report "$1"; }
+
+# ----- R1. remove Windows from Ollie OS's drive; the room goes back to Ollie OS -----
+if want remove; then
+    world 80 0 "3:16M:$MSR:Microsoft reserved partition" "4:60G:$WIN:Basic data partition" "5:1G:$REC:" "6:20G:$WIN:file mail" "7:10G:$WIN:OLLIE_WINSETUP"
+    # Windows' own start-up files, and a saved Windows file
+    touch "$work/fake/boot/loader/entries/windows.conf" "$work/fake/etc/ollie/windows" "$work/fake/var/lib/ollie/windows-10.iso"
+    mkdir -p "$work/fake/boot/EFI/Microsoft/Boot"
+    keep6="$(partline 6)"
+    rsz_before=$(partsize 2)
+    fs_before="$(btrfs filesystem usage -b "$work/mnt" | awk '/Device size:/ {print $3; exit}')"
+    # drive 1, parts 3,4,5,7, DELETE, give the room back
+    run_remover '1\n3,4,5,7\nDELETE\n\n\n' || bad "remover failed ($?)"
+    for p in 3 4 5 7; do [[ -n "$(partline $p)" ]] && bad "part $p is still there"; done
+    [[ "$(partline 6)" == "$keep6" ]] || bad "the data part (6) was touched"
+    [[ -n "$(partline 1)" && -n "$(partline 2)" ]] || bad "Ollie OS's own parts are gone"
+    [[ -e $work/fake/boot/loader/entries/windows.conf || -e $work/fake/boot/EFI/Microsoft || -e $work/fake/etc/ollie/windows ]] && bad "Windows' start-up files were left"
+    [[ -e $work/fake/var/lib/ollie/windows-10.iso ]] && bad "the saved Windows file was left"
+    ((($(partsize 2)) > rsz_before)) || bad "Ollie OS's part did not get bigger"
+    fs_after="$(btrfs filesystem usage -b "$work/mnt" | awk '/Device size:/ {print $3; exit}')"
+    ((fs_after > fs_before)) || bad "Ollie OS's btrfs did not get bigger ($fs_before -> $fs_after)"
+    ((fs_after <= $(partsize 2) * 512)) || bad "the btrfs is bigger than its part"
+    [[ "$(stat -c %s "$work/mnt/data.bin")" == 20000000 ]] || bad "Ollie OS's files were damaged"
+    sgdisk -v "$work/disk.img" | grep -q "No problems found" || bad "sgdisk -v is not happy"
+    report_rem "Windows Remover: parts deleted, start-up files cleaned, room given back to Ollie OS"
+fi
+
+# ----- R2. the room is not given back when asked not to; wrong word deletes nothing -----
+if want remove2; then
+    world 80 0 "3:16M:$MSR:Microsoft reserved partition" "4:60G:$WIN:Basic data partition"
+    before="$(tab)"
+    run_remover '1\nall\nyes\n' || true
+    [[ "$(tab)" == "$before" ]] || bad "something was deleted without the word DELETE"
+    run_remover '1\nall\nDELETE\nn\n\n' || bad "remover failed ($?)"
+    [[ -z "$(partline 3)" && -z "$(partline 4)" ]] || bad "the parts were not deleted"
+    [[ $(partsize 2) == "$(( 80 * 1024 * 1024 * 1024 / 512 ))" ]] || bad "Ollie OS's part changed although it said no"
+    report_rem "Windows Remover: wrong word deletes nothing; no to 'give the room back' keeps Ollie OS's size"
+fi
+
+# ----- R3. Windows on another drive: a second word is needed, Ollie OS's drive is not touched -----
+if want removeother; then
+    world 80 0 "3:20G:$WIN:file mail"
+    rm -f "$work/disk2.img"; truncate -s 200G "$work/disk2.img"
+    sgdisk -n 1:2048:+512M -t 1:ef00 -c 1:"EFI system partition" -n 2:0:+16M -t "2:$MSR" -n 3:0:+100G -t "3:$WIN" -c "3:Basic data partition" -n 4:0:+1G -t "4:$REC" "$work/disk2.img" >/dev/null
+    L2="$(losetup -f --show "$work/disk2.img")"; ln -sf "$L2" /dev/ollietest1
+    before0="$(tab)"
+    # drive 2 (the other one): parts 2,3,4, DELETE, but the wrong drive name: nothing happens
+    run_remover '2\nall\nDELETE\nwrong\n' || true
+    [[ -n "$(sfdisk -d "$work/disk2.img" | grep "disk2.img3 ")" ]] || bad "the other drive was changed without its name typed"
+    run_remover '2\nall\nDELETE\nollietest1\n\n' || bad "remover failed ($?)"
+    sfdisk -d "$work/disk2.img" | grep -q "disk2.img[234] " && bad "Windows parts are still on the other drive"
+    sfdisk -d "$work/disk2.img" | grep -q "disk2.img1 " || bad "the other drive's start-up part (1) was deleted"
+    [[ "$(tab)" == "$before0" ]] || bad "Ollie OS's own drive was changed"
+    report_rem "Windows Remover: Windows on another drive removed only after its name was typed"
+fi
+
+# ----- R4. nothing that looks like Windows -----
+if want removenone; then
+    world 80 0
+    before="$(tab)"
+    run_remover '1\n' && bad "it went on with nothing to remove"
+    grep -q "nothing to remove" "$work/rem.out" || bad "it did not say there is nothing to remove"
+    [[ "$(tab)" == "$before" ]] || bad "the part table changed"
+    report_rem "Windows Remover: nothing found, nothing changed"
 fi
 
 ((fail == 0)) && echo "ALL OK" || echo "FAILED"

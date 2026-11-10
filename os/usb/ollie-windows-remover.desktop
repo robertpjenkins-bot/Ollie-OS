@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Windows Remover
+Comment=Take Windows and its parts off a drive
+Exec=ollie-windows-remover
+Icon=ollie-os
+Terminal=false
+Categories=System;

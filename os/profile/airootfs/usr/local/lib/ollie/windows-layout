@@ -15,6 +15,9 @@
 #   wl_remove_setup DISK           deletes those (old tries leave them)
 #   wl_delete_parts DISK ROOT N... deletes parts the person picked (never ROOT)
 #   wl_windows_parts DISK          numbers and kinds of parts that look like Windows
+#   wl_scan_windows DISK SRC       finds parts that look like Windows (WL_WINPARTS, WL_WINLINES)
+#   wl_clean_windows_boot          takes Windows' start-up files and entries away
+#   wl_grow_root DISK ROOTNUM      gives free room right after Ollie OS's part back to it
 #   wl_plan DISK ROOTNUM GB        makes the room, see below
 # All sector numbers are in the drive's logical sectors.
 #
@@ -38,6 +41,7 @@ WL_SETUP_LABEL=OLLIE_WINSETUP
 # Hooks (windows-plan replaces them; they do nothing here).
 wl_hook_fs_shrink() { :; } # GIB: make Ollie OS's file system GIB smaller (return 1 if it cannot)
 wl_hook_kernel() { :; }    # DISK NUM: the kernel should look at the part table again
+wl_hook_fs_grow() { :; }   # the file system of Ollie OS's part should fill its part again
 
 wl__ss() { # logical sector size of DISK
     sfdisk -F "$1" 2>/dev/null | awk '/^Sector size \(logical/ {print $4; exit}'
@@ -103,6 +107,85 @@ wl_windows_parts() {
     wl__parts "$1" | awk '
         $4 == "E3C9E316-0B5C-4DB8-817D-F92DF00215AE" {print $1, "msr"}
         $4 == "DE94BBA4-06D1-4D40-A16A-BFD50179D6AC" {print $1, "recovery"}'
+}
+
+# Parts on DISK that look like Windows' own (SRC is Ollie OS's part, never
+# listed; OLLIE_* parts are not listed either): the Microsoft reserved part,
+# the recovery part, NTFS and BitLocker parts. NTFS ones can also be a
+# person's own files, so callers let a person pick which to delete.
+# Sets WL_WINPARTS (part numbers) and WL_WINLINES ("NUM  DEVICE  SIZE  KIND  "NAME"").
+wl_scan_windows() { # wl_scan_windows DISK SRC [with_setup]: with_setup also lists Ollie OS's Windows Setup parts
+    local disk="$1" src="$2" with_setup="${3:-}" line pname ptype pfs plabel kind pn psize
+    WL_WINPARTS=() WL_WINLINES=()
+    wl__kv() { sed -n "s/.*\\b$2=\"\\([^\"]*\\)\".*/\\1/p" <<<"$1"; }
+    while IFS= read -r line; do
+        pname="$(wl__kv "$line" NAME)" ptype="$(wl__kv "$line" PARTTYPE)" pfs="$(wl__kv "$line" FSTYPE)" plabel="$(wl__kv "$line" PARTLABEL)"
+        [[ -n $pname && $pname != "$src" ]] || continue
+        kind=""
+        if [[ $plabel == OLLIE_WINSETUP && -n $with_setup ]]; then
+            kind="Windows Setup (made by Ollie OS)"
+        elif [[ $plabel == OLLIE_* ]]; then
+            continue
+        fi
+        [[ -n $kind ]] || case "${ptype,,}" in
+        e3c9e316-0b5c-4db8-817d-f92df00215ae) kind="Microsoft reserved (Windows)" ;;
+        de94bba4-06d1-4d40-a16a-bfd50179d6ac | de94bbab-06d1-4d40-a16a-bfd50179d6ac) kind="Windows recovery" ;;
+        esac
+        [[ -z $kind && ( $pfs == ntfs || $pfs == BitLocker ) ]] && kind="$pfs (Windows, or your own files)"
+        [[ -n $kind ]] || continue
+        pn="${pname##*[!0-9]}"
+        [[ -n $pn ]] || continue
+        WL_WINPARTS+=("$pn")
+        psize="$(numfmt --to=iec --suffix=B "$(wl__kv "$line" SIZE)" 2>/dev/null)"
+        WL_WINLINES+=("$(printf '%s  %s  %s  %s' "$pn" "$pname" "$psize" "$kind${plabel:+  \"$plabel\"}")")
+    done < <(lsblk -bnPpo NAME,PARTTYPE,FSTYPE,PARTLABEL,SIZE "$disk" 2>/dev/null | grep 'NAME="/dev/')
+    return 0
+}
+
+# Windows' start-up files on Ollie OS's start-up part, Ollie OS's note of
+# Windows, and the computer's start-up list entries for it (Windows Boot
+# Manager, Install Windows). WL_BOOT is where the start-up part is mounted.
+wl_clean_windows_boot() {
+    local boot="${WL_BOOT:-/boot}" num
+    rm -rf "$boot/EFI/Microsoft" "$boot/loader/entries/windows.conf" "${WL_ETC:-/etc}/ollie/windows"
+    if command -v efibootmgr >/dev/null 2>&1; then
+        while read -r num; do efibootmgr -q -b "$num" -B >/dev/null 2>&1; done < <(efibootmgr 2>/dev/null | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? \(Windows Boot Manager\|Install Windows [0-9]*\).*/\1/p')
+    fi
+    return 0
+}
+
+# Gives the free room right after Ollie OS's part (ROOTNUM) back to it: the
+# part is made as big as that room allows, then its file system fills it (the
+# caller's wl_hook_fs_grow). Does nothing if no free room follows it.
+# Prints how many GiB it gave back; sets WL_GROWN_GIB.
+wl_grow_root() { # wl_grow_root DISK ROOTNUM
+    local disk="$1" rootnum="$2" ss info rstart rsize rend bs bz newsize gave=0
+    WL_GROWN_GIB=0
+    ss="$(wl__ss "$disk")"
+    info="$(wl_part_info "$disk" "$rootnum")"
+    read -r rstart rsize <<<"$info"
+    [[ -n $rstart && -n $rsize && -n $ss ]] || return 1
+    rend=$((rstart + rsize))
+    local endsec=0
+    while read -r bs bz; do
+        [[ -n $bs ]] || continue
+        # the free block that starts right after the part (its end is on a 1 MiB boundary)
+        if ((bs >= rend && bs - rend <= WL_ALIGN_B / ss)); then
+            gave=$bz
+            endsec=$((bs + bz))
+            break
+        fi
+    done < <(wl_free_blocks "$disk")
+    ((gave > 0)) || { echo "There is no free room right after Ollie OS's part to give back."; return 0; }
+    endsec=$((endsec / (WL_ALIGN_B / ss) * (WL_ALIGN_B / ss)))
+    newsize=$((endsec - rstart))
+    ((newsize > rsize)) || return 0
+    echo ", $newsize" | sfdisk --no-reread --no-tell-kernel -q -N "$rootnum" "$disk" || { echo "The part table could not be changed." >&2; return 1; }
+    wl_hook_kernel "$disk" "$rootnum"
+    wl_hook_fs_grow || { echo "Ollie OS's file system could not be made bigger (the part is, so run it again)." >&2; return 1; }
+    WL_GROWN_GIB=$(((newsize - rsize) * ss / WL_GiB))
+    echo "Ollie OS's part got $WL_GROWN_GIB GiB bigger."
+    return 0
 }
 
 wl__align_up() { # wl__align_up SECTOR SS: up to the next 1 MiB

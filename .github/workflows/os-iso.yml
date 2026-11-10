@@ -196,7 +196,7 @@ jobs:
             "${files[@]}" *.sha256 Ollie-OS-USB-Maker-x86_64.AppImage Ollie-OS-Drive-Writer-x86_64.AppImage \
             Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage Ollie-OS-Discover-Updater-x86_64.AppImage \
             Ollie-OS-Download-Tracker-Updater-x86_64.AppImage \
-            Ollie-OS-Windows-Boot-Updater-x86_64.AppImage Ollie-OS-Add-Windows-Updater-x86_64.AppImage Ollie-OS-Storage-Updater-x86_64.AppImage \
+            Ollie-OS-Windows-Boot-Updater-x86_64.AppImage Ollie-OS-Add-Windows-Updater-x86_64.AppImage Ollie-OS-Windows-Remover-x86_64.AppImage Ollie-OS-Storage-Updater-x86_64.AppImage \
             Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage Ollie-OS-Drive-Installer-x86_64.AppImage \
             Ollie-OS-Game-Pack-Updater-x86_64.AppImage \
             Ollie-OS-Builder-x86_64.AppImage Ollie-OS-Builder-Mac.zip Ollie-OS-Builder-Mac.dmg Ollie-OS-Builder-Windows.exe \

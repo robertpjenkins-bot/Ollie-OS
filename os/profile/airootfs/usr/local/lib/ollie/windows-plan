@@ -14,16 +14,20 @@
 #                          login to get Windows Setup ready (from the Windows
 #                          .iso the Add Windows Updater saved in /var/lib/ollie,
 #                          else from Microsoft) and start it.
+#   AUTO=1                 with that saved .iso: do not wait for the login: put
+#                          Windows Setup on the drive right away and restart
+#                          into it (the Add Windows Updater asks for this).
 # The file is used once (taken away first, so this never runs twice). What
 # happens is in the journal (journalctl -u ollie-windows-plan).
 set -uo pipefail
 plan=/boot/ollie-windows-plan
 [[ -f $plan ]] || exit 0
 val() { sed -n "s/^$1=//p" "$plan" | tail -n 1 | tr -cd '0-9'; }
-menu="$(val MENU)" version="$(val VERSION)" gb="$(val GB)"
+menu="$(val MENU)" version="$(val VERSION)" gb="$(val GB)" auto="$(val AUTO)"
 rm -f -- "$plan"
 sync
 fail() { echo "Windows could not be got ready: $*" >&2; exit 1; }
+msg() { echo "$*"; plymouth display-message --text="$*" 2>/dev/null || true; } # on the console, and on the start-up picture
 
 if [[ $menu == 1 ]]; then
     systemctl enable --now ollie-windows-boot.service && echo "Windows on the start-up menu: switched on."
@@ -80,3 +84,30 @@ install -m 0644 /usr/local/share/ollie/ollie-windows-install.desktop /usr/share/
 sed -e 's#^Exec=.*#Exec=/usr/local/bin/ollie-windows-install --at-login#' /usr/local/share/ollie/ollie-windows-install.desktop >/etc/xdg/autostart/ollie-windows-install.desktop
 systemctl enable ollie-windows-boot.service >/dev/null 2>&1
 echo "Room for Windows $version is ready: Install Windows opens at the next login."
+
+# AUTO=1 (the Add Windows Updater, with a Windows file it saved): go on by
+# itself, put Windows Setup on the drive, and restart into it. If anything
+# goes wrong, Install Windows still opens at the next login to do it with a person
+# watching (the autostart above stays until Windows Setup is ready).
+iso="/var/lib/ollie/windows-$version.iso"
+if [[ $auto == 1 && -s $iso ]]; then
+    msg "Putting Windows $version Setup on the drive (a few minutes; the computer restarts by itself)..."
+    for _ in $(seq 1 20); do
+        lsblk -lno PARTLABEL 2>/dev/null | grep -qx OLLIE_WINSETUP && break
+        udevadm settle 2>/dev/null
+        sleep 1
+    done
+    log="$(mktemp)"
+    /usr/local/bin/ollie-windows-setup --version "$version" --iso "$iso" 2>&1 | tee "$log" | while read -r word pct text; do
+        [[ $word == PROGRESS ]] && msg "Windows $version Setup: $text ($pct%)"
+    done
+    if ((PIPESTATUS[0] == 0)) && grep -q '^NEXT-START ' "$log"; then
+        rm -f -- "$iso" "$log"
+        msg "Windows $version Setup is ready: restarting into it."
+        sync
+        systemctl reboot
+    else
+        echo "Windows Setup could not be got ready by itself ($(sed -n 's/^Error: //p' "$log" | tail -n 1)): Install Windows opens at the next login to try again." >&2
+        rm -f "$log"
+    fi
+fi

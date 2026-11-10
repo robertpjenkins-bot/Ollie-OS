@@ -201,29 +201,13 @@ cp "$files/usr/local/lib/ollie/windows-layout" "$layout" || die "could not unpac
 as_root() { # as_root FUNCTION ARGS...: a windows-layout function, as root (the kernel told with partx)
     sudo -n bash -c '. "$0"; wl_hook_kernel() { if [[ $2 == new ]]; then partx -a "$1" >/dev/null 2>&1; else partx -d --nr "$2" "$1" >/dev/null 2>&1; fi; return 0; }; "$@"' "$layout" "$@"
 }
-field() { sed -n "s/.*\\b$2=\"\\([^\"]*\\)\".*/\\1/p" <<<"$1"; }
-
-# Parts that look like Windows' own on this drive: the Microsoft reserved part,
-# the recovery part, NTFS and BitLocker parts. (NTFS ones can also be your own
-# files: nothing is deleted without you picking it and typing DELETE.)
-winparts=() winlines=()
-while IFS= read -r line; do
-    pname="$(field "$line" NAME)" ptype="$(field "$line" PARTTYPE)" pfs="$(field "$line" FSTYPE)" plabel="$(field "$line" PARTLABEL)"
-    [[ -n $pname && $pname != "$src" ]] || continue
-    [[ $plabel == OLLIE_* ]] && continue
-    kind=""
-    case "${ptype,,}" in
-    e3c9e316-0b5c-4db8-817d-f92df00215ae) kind="Microsoft reserved (Windows)" ;;
-    de94bba4-06d1-4d40-a16a-bfd50179d6ac | de94bbab-06d1-4d40-a16a-bfd50179d6ac) kind="Windows recovery" ;;
-    esac
-    [[ -z $kind && ( $pfs == ntfs || $pfs == BitLocker ) ]] && kind="$pfs (Windows, or your own files)"
-    [[ -n $kind ]] || continue
-    pn="${pname##*[!0-9]}"
-    [[ -n $pn ]] || continue
-    winparts+=("$pn")
-    psize="$(numfmt --to=iec --suffix=B "$(field "$line" SIZE)" 2>/dev/null)"
-    winlines+=("$(printf '%s  %s  %s  %s' "$pn" "$pname" "$psize" "$kind${plabel:+  \"$plabel\"}")")
-done < <(lsblk -bnPpo NAME,PARTTYPE,FSTYPE,PARTLABEL,SIZE "$disk" 2>/dev/null | grep 'NAME="/dev/')
+# Parts that look like Windows' own on this drive (windows-layout looks; NTFS
+# ones can also be your own files: nothing is deleted without you picking it
+# and typing DELETE).
+# shellcheck source=/dev/null
+. "$layout"
+wl_scan_windows "$disk" "$src"
+winparts=("${WL_WINPARTS[@]}") winlines=("${WL_WINLINES[@]}")
 if ((${#winparts[@]})) || [[ -f /boot/loader/entries/windows.conf ]]; then
     printf '\n%sWindows seems to be on this drive already%s.\n' "$green$bold" "$reset"
     if ((${#winparts[@]})); then
@@ -291,7 +275,7 @@ if ((${#winparts[@]})) || [[ -f /boot/loader/entries/windows.conf ]]; then
         say "Deleting the parts"
         as_root wl_delete_parts "$disk" "$num" "${todel[@]}" || die "the parts could not be deleted (see above)."
         # Windows' start-up files and Ollie OS's note of it go too (the new Windows makes its own).
-        sudo -n rm -rf /boot/EFI/Microsoft /boot/loader/entries/windows.conf /etc/ollie/windows
+        as_root wl_clean_windows_boot
         echo "Deleted. The room they held is free now."
         ;;
     esac
@@ -366,6 +350,8 @@ ${bold}Before this starts${reset}
   - $roomline
   - Making a part smaller is safe when the power stays on. Plug a laptop in
     and ask a grown-up to say yes.
+  - At the next start the computer does everything by itself (it takes several
+    minutes) and restarts into Windows Setup. In Windows Setup you pick the room.
   - Windows needs its own licence (a product key). It is not included.
   - If this drive has BitLocker on, or you are not sure, stop here.
 
@@ -452,19 +438,20 @@ sudo -n systemctl enable ollie-windows-plan.service >/dev/null 2>&1 ||
 
 say "Leaving the plan for the next start"
 # (The file is used once; ollie-windows-plan.service takes it away first.)
-printf 'MENU=1\nVERSION=%s\nGB=%s\n' "$VERSION" "$gb" | sudo -n tee /boot/ollie-windows-plan >/dev/null ||
+printf 'MENU=1\nVERSION=%s\nGB=%s\nAUTO=1\n' "$VERSION" "$gb" | sudo -n tee /boot/ollie-windows-plan >/dev/null ||
     die "the plan could not be written to the start-up part (/boot)."
 sudo -n sync
 
 printf '\n%s  Done.%s Now:\n' "$green$bold" "$reset"
 cat <<EOF2
-  1. Restart the computer (keep it plugged in). The first start takes a few
-     minutes more: Ollie OS's part is made smaller and the room is made.
-  2. At the next login "Install Windows" opens by itself. It puts the Windows $VERSION
-     you downloaded onto the drive and starts Windows Setup.
-  3. In Windows Setup pick "Unallocated Space": that is the room kept for
+  1. Restart the computer (keep it plugged in). This first start takes several
+     minutes and the computer restarts by itself: Ollie OS makes the room, puts
+     the Windows $VERSION you saved onto the drive, and starts Windows Setup.
+     (If something goes wrong, "Install Windows" opens at the next login to do
+     it with you watching.)
+  2. In Windows Setup pick "Unallocated Space": that is the room kept for
      Windows. Ollie OS is not touched.
-  4. After that, Windows $VERSION is on the start-up menu next to Ollie OS: pick
+  3. After that, Windows $VERSION is on the start-up menu next to Ollie OS: pick
      it when the computer starts (4 seconds; the arrow keys stop it).
 
   If it is not wanted any more before the restart: delete /boot/ollie-windows-plan

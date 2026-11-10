@@ -287,11 +287,52 @@ def trial_delete(rng, n, tmp, verbose):
     return rc == 0, info.get("MODE", ""), problems, log
 
 
+def trial_grow(rng, n, tmp, verbose):
+    """wl_grow_root: Ollie OS's part gets the free room right after it, nothing else changes."""
+    img = os.path.join(tmp, f"g{n}.img")
+    made = make_disk(rng, img)
+    if made is None:
+        os.remove(img)
+        return None
+    placed, rootnum, disk = made
+    before = table(img)
+    root = before[rootnum]
+    end = root["start"] + root["size"]
+    adj = next((b for b in free_blocks(img) if 0 <= b[0] - end <= MiB // SS), None)
+    shell = BASH_HEAD % LIB + f'wl_grow_root "{img}" {rootnum}; echo "GROWN=${{WL_GROWN_GIB:-0}}"'
+    r = subprocess.run(["bash", "-c", shell], capture_output=True, text=True, env=dict(os.environ, FS_GIB="1", USED_GIB="0"))
+    after = table(img)
+    problems = []
+    if r.returncode != 0:
+        problems.append("grow failed: " + (r.stdout + r.stderr)[-200:])
+    if "No problems found" not in run("sgdisk", "-v", img, check=False).stdout:
+        problems.append("sgdisk -v is not happy")
+    for k, p in before.items():
+        if k != rootnum and after.get(k) != p:
+            problems.append(f"part {k} changed")
+    ra = after.get(rootnum)
+    if ra is None or ra["start"] != root["start"] or ra["uuid"] != root["uuid"]:
+        problems.append("Ollie OS's part moved or lost")
+    elif adj is None:
+        if ra["size"] != root["size"]:
+            problems.append("grew although no free room follows it")
+    else:
+        want_end = (adj[0] + adj[1]) // (MiB // SS) * (MiB // SS)
+        if ra["start"] + ra["size"] != want_end:
+            problems.append(f"did not fill the free room: ends at {ra['start'] + ra['size']}, wanted {want_end}")
+        if free_blocks(img) and any(0 <= b[0] - (ra["start"] + ra["size"]) <= MiB // SS and b[1] * SS >= 2 * MiB for b in free_blocks(img)):
+            problems.append("free room is still right after it")
+    os.remove(img)
+    return True, "grow", problems, r.stdout
+
+
 def one(args):
     kind, seed, n, tmp = args
     rng = random.Random(seed * 100003 + n * 2 + (1 if kind == "delete" else 0))
     if kind == "plan":
         return kind, n, trial_plan(rng, n, tmp, False)
+    if kind == "grow":
+        return kind, n, trial_grow(rng, n, tmp, False)
     return kind, n, trial_delete(rng, n, tmp, False)
 
 
@@ -299,7 +340,7 @@ def main():
     from concurrent.futures import ThreadPoolExecutor
     trials = int(sys.argv[1]) if len(sys.argv) > 1 else 150
     seed = int(sys.argv[2]) if len(sys.argv) > 2 else random.randrange(1 << 30)
-    print(f"windows-layout test: {trials} plan trials + {max(20, trials // 5)} delete trials, seed {seed}")
+    print(f"windows-layout test: {trials} plan + {max(20, trials // 5)} delete + {max(20, trials // 4)} grow trials, seed {seed}")
     for tool in ("sgdisk", "sfdisk", "bash"):
         if not shutil.which(tool):
             print(f"SKIP: {tool} is not here")
@@ -307,7 +348,8 @@ def main():
     tmp = tempfile.mkdtemp(prefix="wltest-")
     failed = done = ok = unable = 0
     modes = {"free": 0, "shrink": 0}
-    jobs = [("plan", seed, n, tmp) for n in range(trials)] + [("delete", seed, n, tmp) for n in range(max(20, trials // 5))]
+    jobs = ([("plan", seed, n, tmp) for n in range(trials)] + [("delete", seed, n, tmp) for n in range(max(20, trials // 5))]
+            + [("grow", seed, n, tmp) for n in range(max(20, trials // 4))])
     try:
         with ThreadPoolExecutor(max_workers=24) as ex:
             for kind, n, res in ex.map(one, jobs):
