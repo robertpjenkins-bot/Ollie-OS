@@ -280,6 +280,42 @@ if want delete; then
     report "Windows on the drive: deleted (3,4,5), your data part (6) kept"
 fi
 
+# ----- 3b. Replace it: Enter erases every listed Windows part, then a fresh Windows is put in -----
+if want replace; then
+    world 80 0 "3:16M:$MSR:Microsoft reserved partition" "4:60G:$WIN:Basic data partition" "5:1G:$REC:" "6:20G:$WIN:file mail"
+    touch "$work/fake/boot/loader/entries/windows.conf"
+    mkdir -p "$work/fake/boot/EFI/Microsoft/Boot"
+    truncate -s 3500M "$work/home/Downloads/Win10_22H2_English_x64v1.iso"
+    keep6="$(partline 6)"
+    # Windows 10, regular, Enter (Downloads file), drive 1, 1 = Replace it, Enter = all listed, DELETE, 40 GB, yes
+    run_updater '1\n1\n\n1\n1\n\nDELETE\n40\nyes\n\n' || bad "updater failed ($?)"
+    grep -q "Replace it" "$work/upd.out" || bad "the choice is not called Replace it"
+    for p in 3 4 5; do [[ -n "$(partline $p)" ]] && bad "part $p is still there"; done
+    [[ "$(partline 6)" == "$keep6" ]] || bad "your own data part (6) was touched"
+    grep -q "^VERSION=10" "$work/fake/boot/ollie-windows-plan" 2>/dev/null || bad "no plan for the fresh Windows was left"
+    run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"
+    check_common
+    grep -q -- "--version 10 --iso" "$work/setup.log" 2>/dev/null || bad "the fresh Windows was not put on the drive"
+    report "Replace it: old Windows parts erased (Enter = all listed), fresh Windows put in, data part kept"
+fi
+
+# ----- 3c. Windows already on the computer (start-up list): keep it, or go on to replace it -----
+if want earlyprompt; then
+    world 80 0 "3:60G:$WIN:Basic data partition"
+    printf 'Boot0003* Windows Boot Manager\tHD(1,GPT)\n' >"$work/efibootmgr.out"
+    before="$(tab)"
+    # Windows 10, regular, 1 = keep it
+    run_updater '1\n1\n1\n' || bad "updater failed ($?)"
+    [[ -f $work/boot.log ]] || bad "keep it: Windows was not put on the start-up menu"
+    [[ "$(tab)" == "$before" ]] || bad "keep it: the part table changed"
+    : >"$work/boot.log"; rm -f "$work/boot.log"
+    # Windows 10, regular, 2 = go on, ... drive 1, then 3 = stop (it showed Replace it)
+    run_updater '1\n1\n2\n\n1\n3\n' || true
+    grep -q "Replace it" "$work/upd.out" || bad "going on did not lead to Replace it"
+    [[ "$(tab)" == "$before" ]] || bad "the part table changed"
+    report "Windows already on the computer: keep it, or go on and see Replace it"
+fi
+
 # ----- 4. wrong word: nothing is deleted -----
 if want nodelete; then
     world 80 0 "3:16M:$MSR:Microsoft reserved partition" "4:60G:$WIN:Basic data partition"

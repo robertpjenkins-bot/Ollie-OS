@@ -154,7 +154,12 @@ iso="/var/lib/ollie/windows-$VERSION.iso"
 # needs to be put on Ollie OS's start-up menu; no second Windows is needed.
 if [[ ! -f /boot/loader/entries/windows.conf ]] && sudo -n efibootmgr 2>/dev/null | grep -qi 'Windows Boot Manager'; then
     printf '\n%sWindows is already on this computer%s (its Windows Boot Manager is in the start-up list).\n' "$green$bold" "$reset"
-    read -rp "Put it on Ollie OS's start-up menu now, instead of adding another Windows? [Y/n] " answer || exit 1
+    printf '  1) Keep it: put it on Ollie OS'"'"'s start-up menu\n'
+    printf '  2) Go on: replace it (if it is on this drive) or add another Windows\n'
+    while :; do
+        read -rp "Type 1 or 2 [1]: " answer || exit 1
+        case "${answer:-1}" in 1) answer=y; break ;; 2) answer=n; break ;; *) echo "Please type 1 or 2." ;; esac
+    done
     if [[ ${answer,,} != n* ]]; then
         say "Putting Windows on Ollie OS's start-up menu"
         install_files
@@ -256,7 +261,7 @@ if ((${#winparts[@]})) || [[ -f /boot/loader/entries/windows.conf ]]; then
         printf 'These parts look like Windows (part number, device, size, kind):\n'
         printf '    %s\n' "${winlines[@]}"
     fi
-    printf '\n  1) Delete Windows and install it fresh (you pick the parts; they are ERASED)\n'
+    printf '\n  1) Replace it: erase the old Windows (the parts listed) and put a fresh Windows in its place\n'
     printf '  2) Keep it: only put it on Ollie OS'"'"'s start-up menu\n  3) Stop\n'
     while :; do
         read -rp "Type 1, 2 or 3: " w2 || exit 1
@@ -277,14 +282,14 @@ if ((${#winparts[@]})) || [[ -f /boot/loader/entries/windows.conf ]]; then
         exit 0
         ;;
     1)
-        ((${#winparts[@]})) || die "no parts that look like Windows were found, so there is nothing to delete here."
+        ((${#winparts[@]})) || die "no parts that look like Windows were found on this drive, so there is nothing to replace here. (If Windows is on another drive, the Windows Remover takes it off.)"
         while :; do
-            read -rp "Type the part numbers to delete, like 3,4,5 (all: every one listed; n: stop): " picks || exit 1
+            read -rp "Erase all the listed parts? Press Enter for all, or type the part numbers to erase (like 3,4), or n to stop: " picks || exit 1
             if [[ ${picks,,} == n* ]]; then
                 printf '\nOK, nothing was changed.\n'
                 exit 0
             fi
-            [[ ${picks,,} == all ]] && picks="${winparts[*]}"
+            [[ -z $picks || ${picks,,} == all ]] && picks="${winparts[*]}"
             picks="${picks//,/ }"
             ok=1 todel=()
             for p in $picks; do
@@ -318,7 +323,7 @@ if ((${#winparts[@]})) || [[ -f /boot/loader/entries/windows.conf ]]; then
         as_root wl_delete_parts "$disk" "$num" "${todel[@]}" || die "the parts could not be deleted (see above)."
         # Windows' start-up files and Ollie OS's note of it go too (the new Windows makes its own).
         as_root wl_clean_windows_boot
-        echo "Deleted. The room they held is free now."
+        echo "Deleted. The room they held is free now: a fresh Windows is put there."
         ;;
     esac
 fi
