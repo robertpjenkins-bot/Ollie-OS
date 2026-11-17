@@ -14,9 +14,10 @@
 #                          login to get Windows Setup ready (from the Windows
 #                          .iso the Add Windows Updater saved in /var/lib/ollie,
 #                          else from Microsoft) and start it.
-#   AUTO=1                 with that saved .iso: do not wait for the login: put
-#                          Windows Setup on the drive right away and restart
-#                          into it (the Add Windows Updater asks for this).
+#   AUTO=1                 with that saved .iso: Install Windows at login asks
+#                          nothing and shows a progress bar, then restarts into
+#                          Windows Setup by itself (the Add Windows Updater asks
+#                          for this).
 # The file is used once (taken away first, so this never runs twice). What
 # happens is in the journal (journalctl -u ollie-windows-plan).
 set -uo pipefail
@@ -85,12 +86,15 @@ sed -e 's#^Exec=.*#Exec=/usr/local/bin/ollie-windows-install --at-login#' /usr/l
 systemctl enable ollie-windows-boot.service >/dev/null 2>&1
 echo "Room for Windows $version is ready: Install Windows opens at the next login."
 
-# AUTO=1 (the Add Windows Updater, with a Windows file it saved): go on by
-# itself, put Windows Setup on the drive, and restart into it. If anything
-# goes wrong, Install Windows still opens at the next login to do it with a person
-# watching (the autostart above stays until Windows Setup is ready).
+# AUTO=1 (the Add Windows Updater, with a Windows file it saved): Windows goes
+# on by itself, but NOT here at start-up: putting Windows Setup on a slow USB
+# drive takes many minutes, and the start-up screen shows nothing (a black
+# screen with a dot, with the login screen held back). The autostart above does
+# it at login instead: Install Windows (--at-login) asks nothing when the saved
+# Windows file is there, shows a progress bar, and restarts into it by itself.
+# (OLLIE_WINDOWS_AT_BOOT=1 does it here: for tests.)
 iso="/var/lib/ollie/windows-$version.iso"
-if [[ $auto == 1 && -s $iso ]]; then
+if [[ $auto == 1 && -s $iso && ${OLLIE_WINDOWS_AT_BOOT:-} == 1 ]]; then
     msg "Putting Windows $version Setup on the drive (a few minutes; the computer restarts by itself)..."
     for _ in $(seq 1 20); do
         lsblk -lno PARTLABEL 2>/dev/null | grep -qx OLLIE_WINSETUP && break

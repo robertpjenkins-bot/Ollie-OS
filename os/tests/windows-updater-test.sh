@@ -232,10 +232,24 @@ if want shrink; then
     check_common
     [[ "$(partline 3)" == "$before3" ]] || bad "the data part changed"
     grep -q 'Making room' "$work/plan.out" || bad "it did not make Ollie OS's part smaller"
-    grep -q -- "--version 10 --iso $work/fake/var/lib/ollie/windows-10.iso" "$work/setup.log" 2>/dev/null || bad "the start did not put Windows Setup on the drive (setup.log: $(cat "$work/setup.log" 2>/dev/null))"
+    [[ -f $work/setup.log ]] && bad "Windows Setup was put on the drive at start-up (black screen, no progress): it must wait for the login"
+    grep -q '^systemctl reboot' "$work/systemctl.log" 2>/dev/null && bad "the start-up step restarted the computer"
+    [[ -s $work/fake/var/lib/ollie/windows-10.iso ]] || bad "the saved Windows file was removed before it was used"
+    [[ -f $work/fake/etc/xdg/autostart/ollie-windows-install.desktop ]] || bad "Install Windows would not open at login to go on"
+    grep -q -- "--at-login" "$work/fake/etc/xdg/autostart/ollie-windows-install.desktop" || bad "the login entry is not the --at-login one"
+    report "full drive: Ollie OS made smaller, data part after it kept, the rest waits for the login (progress bar)"
+fi
+
+# ----- 1d. The boot-time stage itself (switched on for the test): Windows Setup put on, restart -----
+if want atboot; then
+    world 100 150
+    truncate -s 3500M "$work/home/Downloads/Win10_22H2_English_x64v1.iso"
+    run_updater '1\n1\n\n1\n40\nyes\n\n' || bad "updater failed ($?)"
+    OLLIE_WINDOWS_AT_BOOT=1 run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"
+    check_common
+    grep -q -- "--version 10 --iso $work/fake/var/lib/ollie/windows-10.iso" "$work/setup.log" 2>/dev/null || bad "Windows Setup was not put on the drive"
     grep -q '^reboot' "$work/systemctl.log" 2>/dev/null || bad "it did not restart into Windows Setup"
-    [[ -e $work/fake/var/lib/ollie/windows-10.iso ]] && bad "the saved Windows file was not removed after it was on the drive"
-    report "full drive: Ollie OS made smaller, data part after it kept, Windows Setup put on, restart"
+    report "boot-time stage (test switch): Windows Setup put on, restart"
 fi
 
 # ----- 1b. putting Windows Setup on the drive fails: no restart, Install Windows at login -----
@@ -243,7 +257,7 @@ if want autofail; then
     world 100 150
     truncate -s 3500M "$work/home/Downloads/Win10_22H2_English_x64v1.iso"
     run_updater '1\n1\n\n1\n40\nyes\n\n' || bad "updater failed ($?)"
-    SETUP_FAIL=1 run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"
+    OLLIE_WINDOWS_AT_BOOT=1 SETUP_FAIL=1 run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"
     check_common
     grep -q '^reboot' "$work/systemctl.log" 2>/dev/null && bad "it restarted although Windows Setup was not ready"
     [[ -s $work/fake/var/lib/ollie/windows-10.iso ]] || bad "the saved Windows file was removed although it did not work"
@@ -270,7 +284,7 @@ if want autohang; then
     truncate -s 3500M "$work/home/Downloads/Win10_22H2_English_x64v1.iso"
     run_updater '1\n1\n\n1\n40\nyes\n\n' || bad "updater failed ($?)"
     start=$SECONDS
-    SETUP_HANG=1 OLLIE_WINDOWS_SETUP_TIMEOUT=3 run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"
+    OLLIE_WINDOWS_AT_BOOT=1 SETUP_HANG=1 OLLIE_WINDOWS_SETUP_TIMEOUT=3 run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"
     ((SECONDS - start < 30)) || bad "it waited $((SECONDS - start)) seconds for a hanging Windows Setup"
     grep -q "took longer than" "$work/plan.out" || bad "it did not say Windows Setup took too long: $(tail -n 3 "$work/plan.out" | tr '\n' ' ')"
     grep -q '^systemctl reboot' "$work/systemctl.log" 2>/dev/null && bad "it restarted although Windows Setup did not finish"
@@ -324,7 +338,7 @@ if want replace; then
     for p in 3 4 5; do [[ -n "$(partline $p)" ]] && bad "part $p is still there"; done
     [[ "$(partline 6)" == "$keep6" ]] || bad "your own data part (6) was touched"
     grep -q "^VERSION=10" "$work/fake/boot/ollie-windows-plan" 2>/dev/null || bad "no plan for the fresh Windows was left"
-    run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"
+    OLLIE_WINDOWS_AT_BOOT=1 run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"
     check_common
     grep -q -- "--version 10 --iso" "$work/setup.log" 2>/dev/null || bad "the fresh Windows was not put on the drive"
     report "Replace it: old Windows parts erased (Enter = all listed), fresh Windows put in, data part kept"
