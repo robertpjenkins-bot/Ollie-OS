@@ -64,7 +64,7 @@ world() {
     local f
     for f in usr/local/lib/ollie/windows-plan usr/local/lib/ollie/windows-layout usr/local/lib/ollie/get-windows.py etc/systemd/system/ollie-windows-plan.service \
         usr/local/bin/ollie-windows-setup usr/local/bin/ollie-windows-install usr/local/bin/ollie-windows-boot usr/local/bin/ollie-restart-windows \
-        usr/local/share/ollie/ollie-windows-install.desktop usr/share/applications/ollie-restart-windows.desktop; do
+        usr/local/share/ollie/ollie-windows-install.desktop usr/local/share/ollie/windows-usb-install.cmd usr/share/applications/ollie-restart-windows.desktop; do
         mkdir -p "$work/share/airootfs/$(dirname "$f")"
         cp -a "$air/$f" "$work/share/airootfs/$f"
     done
@@ -103,6 +103,7 @@ img="$work/disk.img" dev=/dev/ollietest0
 for a in "\$@"; do case "\$a" in /dev/ollietest0) img="$work/disk.img" dev=/dev/ollietest0 ;; /dev/ollietest1) img="$work/disk2.img" dev=/dev/ollietest1 ;; esac; done
 case "\$*" in
 *PKNAME*) echo ollietest0 ;;
+*TRAN*) [[ -n \${USB_DRIVE:-} ]] && echo usb ;;
 *PTTYPE*) echo gpt ;;
 *NAME,SIZE,TYPE,MODEL*) echo "/dev/ollietest0 500G disk Test drive"; [[ -f "$work/disk2.img" ]] && echo "/dev/ollietest1 200G disk Other drive" ;;
 *PARTTYPE*) # the parts, from the image
@@ -248,6 +249,18 @@ if want autofail; then
     [[ -f $work/fake/etc/xdg/autostart/ollie-windows-install.desktop ]] || bad "Install Windows would not open at login"
     grep -q "could not be got ready by itself" "$work/plan.out" || bad "no word about it in the log"
     report "Windows Setup not ready: no restart, the file kept, Install Windows at login"
+fi
+
+# ----- U1. The drive is connected by USB: it says Windows goes on another way, with no Windows Setup steps -----
+if want usbdrive; then
+    world 100 150
+    truncate -s 3500M "$work/home/Downloads/Win10_22H2_English_x64v1.iso"
+    USB_DRIVE=1 run_updater '1\n1\n\n1\n40\nyes\n\n' || bad "updater failed ($?)"
+    grep -q "connected by USB" "$work/upd.out" || bad "it did not say the drive is connected by USB"
+    grep -q "skips Windows Setup" "$work/upd.out" || bad "it did not say Windows Setup is skipped"
+    grep -q 'pick "Unallocated Space"' "$work/upd.out" && bad "it still tells the person to use Windows Setup's screens"
+    grep -q "blue screen" "$work/upd.out" || bad "no word about the blue screen"
+    report "USB drive: Windows goes on without Windows Setup's checks, and says so"
 fi
 
 # ----- 2. free room at the end of the drive: Ollie OS is not touched -----

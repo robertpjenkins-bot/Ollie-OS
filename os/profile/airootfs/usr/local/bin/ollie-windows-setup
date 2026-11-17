@@ -26,12 +26,20 @@
 #                6 GB, into --work: deleted once it is on the drive)
 #     --part     the Windows Setup part (default: OLLIE_WINSETUP on the drive
 #                Ollie OS starts from)
+#     --usb      yes | no | auto (default): a drive connected by USB is one Windows
+#                Setup refuses to install to ("does not support installation to
+#                disks connected through a USB port"). Then Setup is not run: its
+#                start-up image gets a script instead (windows-usb-install.cmd)
+#                that puts Windows on an empty NTFS part (made here, in the free
+#                room, called OLLIE_WINDOWS) with DISM and BCDBOOT, which have
+#                no such check, and restarts. ollie-windows-boot then puts that
+#                Windows on Ollie OS's start-up menu.
 #     --root     the Ollie OS to note it in (/etc/ollie/windows; default /)
 # Prints "PROGRESS percent text" lines. As root.
 set -uo pipefail
 [[ $EUID -eq 0 ]] || exec sudo -n "$0" "$@"
 
-version="" iso="" part="" work=/var/tmp root=/ efi_vars=1 label_check=1
+version="" iso="" part="" work=/var/tmp root=/ efi_vars=1 label_check=1 usb=auto winpart=""
 while (($#)); do
     case "$1" in
     --version) version="$2"; shift 2 ;;
@@ -41,6 +49,8 @@ while (($#)); do
     --root) root="$2"; shift 2 ;;
     --no-efi-vars) efi_vars=""; shift ;;
     --no-label-check) label_check=""; shift ;; # for tests: any block device
+    --usb) usb="$2"; shift 2 ;;               # yes | no | auto (auto: the drive is connected by USB)
+    --windows-part) winpart="$2"; shift 2 ;;  # for tests: the part Windows goes in (else made in the free room)
     *) echo "Unknown option $1" >&2; exit 2 ;;
     esac
 done
@@ -197,9 +207,86 @@ fi
 umount "$tmp/setup"
 [[ -z $bad ]] || die "the copy of $bad on the drive is not the same as in the Windows file (is the drive failing, or full?). Nothing was started."
 
+# --- A drive Windows Setup will not install to (USB): Ollie OS does Setup's job itself ----------------
+usb_on=""
+if [[ $usb == yes ]]; then
+    usb_on=1
+elif [[ $usb == auto && -n $efi_vars ]]; then
+    d="$(lsblk -no PKNAME "$part" 2>/dev/null | head -n 1)"
+    [[ -n $d && "$(lsblk -dno TRAN "/dev/$d" 2>/dev/null | head -n 1)" == usb ]] && usb_on=1
+fi
+if [[ -n $usb_on ]]; then
+    progress 91 "This drive is connected by USB: Windows Setup would refuse it, so Windows is put on another way"
+    usbcmd="${OLLIE_WINDOWS_USB_CMD:-/usr/local/share/ollie/windows-usb-install.cmd}"
+    [[ -r $usbcmd ]] || die "windows-usb-install.cmd is missing (Update Ollie OS adds it)."
+    command -v mkfs.ntfs >/dev/null && command -v ntfscp >/dev/null || die "ntfs-3g's tools are missing (Update Ollie OS adds them)."
+
+    # 1. The part Windows goes in: empty NTFS, in the free room (called OLLIE_WINDOWS).
+    wpart="$winpart"
+    if [[ -z $wpart ]]; then
+        # shellcheck source=/dev/null
+        . "${OLLIE_WINDOWS_LAYOUT:-/usr/local/lib/ollie/windows-layout}"
+        disk="/dev/$(lsblk -no PKNAME "$part" | head -n 1)"
+        wpart="$(lsblk -lnpo NAME,PARTLABEL "$disk" | awk '$2 == "OLLIE_WINDOWS" {print $1; exit}')"
+        if [[ -z $wpart ]]; then
+            read -r fstart fsectors <<<"$(wl_largest_free "$disk")"
+            fss="$(wl__ss "$disk")"
+            [[ -n ${fstart:-} && -n ${fss:-} ]] || die "there is no free room on the drive for Windows."
+            fend=$(((fstart + fsectors) * fss / 1048576 * 1048576 / fss - 1)) # the end on a 1 MiB boundary
+            ((fend - fstart + 1 >= 20 * 1073741824 / fss)) || die "the free room on the drive is under 20 GB: not enough for Windows."
+            sgdisk -n "0:$fstart:$fend" -t 0:0700 -c 0:OLLIE_WINDOWS "$disk" >/dev/null || die "the part for Windows could not be made."
+            partx -a "$disk" 2>/dev/null
+            udevadm settle 2>/dev/null
+            for _ in $(seq 1 20); do
+                wpart="$(lsblk -lnpo NAME,PARTLABEL "$disk" | awk '$2 == "OLLIE_WINDOWS" {print $1; exit}')"
+                [[ -n $wpart ]] && break
+                sleep 1
+            done
+        fi
+    fi
+    [[ -n $wpart && -b $wpart ]] || die "the part for Windows is not there."
+    progress 92 "Making the part for Windows (NTFS)"
+    umount "$wpart" 2>/dev/null
+    # A Windows already on it (put on by an earlier run) is never formatted over.
+    if command -v ntfsls >/dev/null && ntfsls "$wpart" 2>/dev/null | grep -qx Windows; then
+        die "there is already a Windows on the part for Windows ($wpart). Choose \"Replace it\" in the Add Windows Updater to erase it first."
+    fi
+    mkfs.ntfs -Q -F -L Windows "$wpart" >/dev/null 2>&1 || die "the part for Windows could not be formatted (NTFS)."
+    echo "Ollie OS: Windows goes here" >"$tmp/target-marker"
+    ntfscp -f "$wpart" "$tmp/target-marker" OLLIE-WINDOWS-TARGET >/dev/null 2>&1 || die "the part for Windows could not be marked."
+
+    # 2. On the Windows Setup part: a marker, the edition to put on (Pro if there is one), and the script in Setup's start-up image.
+    mount "$part" "$tmp/setup" || die "the Windows Setup part could not be opened again."
+    echo "Ollie OS: Windows Setup part" >"$tmp/setup/ollie-setup-marker"
+    img=""
+    for f in "$tmp"/setup/sources/install.wim "$tmp"/setup/sources/install.esd "$tmp"/setup/sources/install.swm; do [[ -f $f ]] && img="$f" && break; done
+    idx="$(wimlib-imagex info "$img" 2>/dev/null | awk '
+        /^Index:/ {i = $2}
+        /^Name:/ {n = $0; sub(/^Name: */, "", n); if (!first) first = i; if (n ~ /^Windows [0-9]+ Pro$/ && !pro) pro = i}
+        END {print (pro ? pro : (first ? first : 1))}')"
+    printf '%s\r\n' "$idx" >"$tmp/setup/ollie-image-index.txt"
+    boot_wim="$tmp/setup/sources/boot.wim"
+    bidx="$(wimlib-imagex info "$boot_wim" 2>/dev/null | awk '
+        /^Index:/ {i = $2; last = i}
+        /^Name:/ && tolower($0) ~ /setup/ {setupi = i}
+        END {print (setupi ? setupi : (last ? last : 1))}')"
+    sed 's/$/\r/' "$usbcmd" >"$tmp/ollie-usb-install.cmd"
+    printf '[LaunchApps]\r\n%%SYSTEMROOT%%\\System32\\cmd.exe, /k %%SYSTEMROOT%%\\System32\\ollie-usb-install.cmd\r\n' >"$tmp/winpeshl.ini"
+    progress 93 "Putting the Windows script into Windows Setup's start-up image"
+    wimlib-imagex update "$boot_wim" "$bidx" >/dev/null 2>&1 <<WIMEOF || die "the script could not be put into Windows Setup's start-up image (is the drive full?)."
+add '$tmp/ollie-usb-install.cmd' '/Windows/System32/ollie-usb-install.cmd'
+add '$tmp/winpeshl.ini' '/Windows/System32/winpeshl.ini'
+WIMEOF
+    wimlib-imagex verify "$boot_wim" >/dev/null 2>&1 || die "Windows Setup's start-up image is damaged after the change."
+    sync
+    umount "$tmp/setup"
+    usb_note=1
+fi
+
 # Noted for Ollie OS: the menu says "Windows 11" (or 10) once it is installed.
 install -D -m 0644 /dev/stdin "$root/etc/ollie/windows" <<EOF
-VERSION=$version
+VERSION=$version${usb_note:+
+USB=1}
 SETUP=$(blkid -s PARTUUID -o value "$part")
 EOF
 # Ready: "Install Windows" no longer opens by itself at login (windows-plan).

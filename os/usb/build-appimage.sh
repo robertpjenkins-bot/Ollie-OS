@@ -252,7 +252,7 @@ build_add_windows_updater() {
         etc/systemd/system/ollie-windows-plan.service \
         usr/local/bin/ollie-windows-setup usr/local/bin/ollie-windows-install \
         usr/local/bin/ollie-windows-boot usr/local/bin/ollie-restart-windows \
-        usr/local/share/ollie/ollie-windows-install.desktop usr/share/applications/ollie-restart-windows.desktop \
+        usr/local/share/ollie/ollie-windows-install.desktop usr/local/share/ollie/windows-usb-install.cmd usr/share/applications/ollie-restart-windows.desktop \
         usr/share/icons/hicolor/scalable/apps/ollie-restart-windows.svg \
         usr/share/icons/hicolor/48x48/apps/ollie-restart-windows.png usr/share/icons/hicolor/64x64/apps/ollie-restart-windows.png \
         usr/share/icons/hicolor/128x128/apps/ollie-restart-windows.png usr/share/icons/hicolor/256x256/apps/ollie-restart-windows.png; do

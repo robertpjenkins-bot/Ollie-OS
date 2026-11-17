@@ -91,5 +91,42 @@ grep -q '^auto-entries no' "$F/boot/loader/loader.conf" || bad "loader.conf lack
 first="$(grep -o 'for id in [^;]*' "$app" | awk '{print $4}')"
 [[ "$first" == windows.conf ]] || bad "the app's first id ($first) is not the entry file's name (windows.conf)"
 
+echo "== Windows put on by the USB way: its start-up files are picked up from the Windows Setup part"
+G="$work/root2"
+mkdir -p "$G/boot/loader/entries" "$G/boot/EFI" "$G/etc/ollie" "$G/bin" "$work/setupdir/EFI/Microsoft/Boot"
+echo x >"$work/setupdir/EFI/Microsoft/Boot/bootmgfw.efi"
+echo done >"$work/setupdir/ollie-windows-installed.txt"
+truncate -s 1M "$work/loopfile.img"
+SL="$(losetup -f --show "$work/loopfile.img" 2>/dev/null)"
+if [[ -n $SL ]]; then
+    printf 'VERSION=10\nUSB=1\nSETUP=abcd-1234\n' >"$G/etc/ollie/windows"
+    printf 'timeout 3\n' >"$G/boot/loader/loader.conf"
+    cat >"$G/bin/findmnt" <<STUB
+#!/bin/sh
+case "\$*" in *--source*) exit 0;; *FSTYPE*) echo vfat;; *) echo /dev/fakeboot;; esac
+STUB
+    printf '#!/bin/sh\nexit 0\n' >"$G/bin/lsblk"
+    printf '#!/bin/sh\necho %s\n' "$SL" >"$G/bin/blkid"
+    cat >"$G/bin/mount" <<STUB
+#!/bin/bash
+args=("\$@")
+exec /usr/bin/mount --bind "$work/setupdir" "\${args[\$((\${#args[@]} - 1))]}"
+STUB
+    chmod +x "$G/bin"/*
+    sed -e "s#\([ \">=]\)/boot#\1$G/boot#g" -e "s#/etc/ollie/windows#$G/etc/ollie/windows#g" "$boot" >"$work/boot2.sh"
+    chmod +x "$work/boot2.sh"
+    PATH="$G/bin:$PATH" "$work/boot2.sh" >"$work/boot2.out" 2>&1 || bad "ollie-windows-boot failed: $(tail -n 3 "$work/boot2.out")"
+    [[ -f $G/boot/EFI/Microsoft/Boot/bootmgfw.efi ]] || bad "Windows' start-up files were not copied from the Windows Setup part"
+    [[ -f $G/boot/loader/entries/windows.conf ]] || bad "no start-up menu entry for the Windows put on the USB way"
+    grep -q '^title *Windows 10' "$G/boot/loader/entries/windows.conf" || bad "the entry is not called Windows 10"
+    # not yet installed (no note from the script): nothing is copied
+    rm -rf "$G/boot/EFI/Microsoft" "$G/boot/loader/entries/windows.conf" "$work/setupdir/ollie-windows-installed.txt"
+    PATH="$G/bin:$PATH" "$work/boot2.sh" >"$work/boot2.out" 2>&1 && bad "it made an entry before Windows was put on"
+    [[ -e $G/boot/EFI/Microsoft ]] && bad "it copied start-up files before Windows was put on"
+    losetup -d "$SL" 2>/dev/null
+else
+    echo "  (skipped: no loop device)"
+fi
+
 ((fail == 0)) && echo "ALL OK" || echo "FAILED"
 exit $fail

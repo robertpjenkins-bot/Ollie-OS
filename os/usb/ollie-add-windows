@@ -382,6 +382,13 @@ else
     getline="Windows $VERSION is downloaded from Microsoft now (about 6 GB; it needs the internet and takes a while)."
     ask="Download Windows $VERSION and make room for it? Type yes: "
 fi
+usbline="" usbdrive=""
+if [[ "$(lsblk -dno TRAN "$disk" 2>/dev/null | head -n 1)" == usb ]]; then
+    usbdrive=1
+    usbline="  - $disk is connected by USB. Windows Setup refuses USB drives, so Ollie OS puts Windows
+    on it another way: it skips Windows Setup (and its checks) and puts Windows on the
+    drive itself. Windows may not start from a USB drive on every computer."
+fi
 if ((gb + 11 <= big_gb)); then
     roomline="Windows gets $gb GB of the free room already on $disk (and 10 GB for Windows Setup), at the
     next start of the computer. Ollie OS's part is not made smaller."
@@ -397,7 +404,8 @@ ${bold}Before this starts${reset}
   - $roomline
   - Making a part smaller is safe when the power stays on. Plug a laptop in
     and ask a grown-up to say yes.
-  - At the next start the computer does everything by itself (it takes several
+${usbline:+$usbline
+}  - At the next start the computer does everything by itself (it takes several
     minutes) and restarts into Windows Setup. In Windows Setup you pick the room.
   - Windows needs its own licence (a product key). It is not included.
   - If this drive has BitLocker on, or you are not sure, stop here.
@@ -490,6 +498,19 @@ printf 'MENU=1\nVERSION=%s\nGB=%s\nAUTO=1\n' "$VERSION" "$gb" | sudo -n tee /boo
 sudo -n sync
 
 printf '\n%s  Done.%s Windows %s goes in now, by itself:\n' "$green$bold" "$reset" "$VERSION"
+if [[ -n $usbdrive ]]; then
+cat <<EOF2
+   - this computer restarts in a moment (keep it plugged in)
+   - on that start Ollie OS makes the room and gets Windows ready, then restarts
+     into a blue screen that says Ollie OS is putting Windows on this drive: it
+     takes several minutes, so wait. There is nothing to click.
+   - then the computer restarts into Ollie OS, and Windows $VERSION is on the
+     start-up menu next to it. The first time you pick Windows, it finishes
+     setting itself up (language, name), which takes a few more minutes.
+   (If something goes wrong, the blue or red screen says what.)
+
+EOF2
+else
 cat <<EOF2
    - this computer restarts in a moment (keep it plugged in)
    - on that start Ollie OS makes the room, puts Windows Setup on the drive and
@@ -501,6 +522,7 @@ cat <<EOF2
     does it with you watching.)
 
 EOF2
+fi
 delay="${OLLIE_RESTART_DELAY:-15}"
 printf '  Restarting in %s seconds. (Press Ctrl+C to restart later yourself.)\n' "$delay"
 for ((i = delay; i > 0; i--)); do

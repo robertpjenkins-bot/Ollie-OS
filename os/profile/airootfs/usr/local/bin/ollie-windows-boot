@@ -50,6 +50,34 @@ while read -r part type; do
     [[ -n $found ]] && break
 done < <(lsblk -lnpo NAME,PARTTYPE)
 
+# Windows put on this drive by ollie-windows-setup's USB way (a drive Windows
+# Setup refuses): its start-up files are on the Windows Setup part, with a note
+# (ollie-windows-installed.txt) from the script that put Windows on. They are
+# copied to Ollie OS's start-up part; the Windows Setup part goes below.
+if [[ -z $found ]]; then
+    setup_id="$(sed -n 's/^SETUP=//p' /etc/ollie/windows 2>/dev/null)"
+    sdev=""
+    [[ -n $setup_id ]] && sdev="$(blkid -t PARTUUID="$setup_id" -o device 2>/dev/null | head -n 1)"
+    if [[ -n $sdev && -b $sdev ]]; then
+        sm="$(findmnt -no TARGET --source "$sdev" | head -n 1)"
+        if [[ -z $sm ]]; then
+            mount -o ro "$sdev" "$tmp" 2>/dev/null && sm=$tmp
+        fi
+        if [[ -n $sm && -f $sm/ollie-windows-installed.txt && -f $sm/EFI/Microsoft/Boot/bootmgfw.efi ]]; then
+            rm -rf /boot/EFI/Microsoft.new
+            if cp -r "$sm/EFI/Microsoft" /boot/EFI/Microsoft.new; then
+                rm -rf /boot/EFI/Microsoft
+                mv /boot/EFI/Microsoft.new /boot/EFI/Microsoft && found="$boot"
+            else
+                rm -rf /boot/EFI/Microsoft.new
+                mountpoint -q "$tmp" && umount "$tmp"
+                die "not enough room on Ollie OS's start-up part for Windows Boot Manager."
+            fi
+        fi
+        mountpoint -q "$tmp" && umount "$tmp"
+    fi
+fi
+
 # Installed next to Ollie OS (ollie-windows-setup noted which one).
 version="$(sed -n 's/^VERSION=//p' /etc/ollie/windows 2>/dev/null)"
 if [[ -z $found ]]; then

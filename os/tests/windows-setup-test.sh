@@ -29,14 +29,16 @@ make_iso() { # make_iso [BIG]: the unpacked ISO in $work/tree
     head -c 200000 /dev/urandom >"$t/setup.exe"
     for i in 1 2 3; do head -c 100000 /dev/urandom >"$t/sources/file$i.dll"; done
     head -c 5000000 /dev/urandom >"$work/img/boot.bin"
-    wimlib-imagex capture "$work/img" "$t/sources/boot.wim" "Windows PE" --compress=LZX >/dev/null 2>&1 || return 1
+    wimlib-imagex capture "$work/img" "$t/sources/boot.wim" "Microsoft Windows PE (x64)" --compress=LZX >/dev/null 2>&1 || return 1
+    wimlib-imagex append "$work/img" "$t/sources/boot.wim" "Microsoft Windows Setup (x64)" --compress=LZX >/dev/null 2>&1 || return 1
     rm -f "$work/img/boot.bin"
     if [[ ${1:-} == big ]]; then
         for i in 1 2 3 4 5 6; do yes "file $i" | head -c 800M >"$work/img/big$i.bin"; done # different files (not merged), 4.8 GB
         wimlib-imagex capture "$work/img" "$t/sources/install.wim" "Windows 10 Pro" --compress=none >/dev/null 2>&1 || return 1
     else
         head -c 20000000 /dev/urandom >"$work/img/os.bin"
-        wimlib-imagex capture "$work/img" "$t/sources/install.wim" "Windows 10 Pro" --compress=LZX >/dev/null 2>&1 || return 1
+        wimlib-imagex capture "$work/img" "$t/sources/install.wim" "Windows 10 Home" --compress=LZX >/dev/null 2>&1 || return 1
+        wimlib-imagex append "$work/img" "$t/sources/install.wim" "Windows 10 Pro" --compress=LZX >/dev/null 2>&1 || return 1
     fi
 }
 
@@ -101,6 +103,49 @@ fi
 say "== not a Windows ISO is turned away"
 mkdir -p "$work/other" && echo hi >"$work/other/readme.txt"
 if run_setup 10 "$work/other"; then say "  FAIL: accepted"; fail=1; else say "  ok: turned away"; fi
+
+say "== a drive connected by USB: Windows is put on without Windows Setup (its check does not apply)"
+make_iso || exit 1
+truncate -s 3G "$work/ntfs.img"
+L3="$(losetup -f --show "$work/ntfs.img")"
+rm -f "$work/part.img"; truncate -s 12G "$work/part.img"
+[[ -n $L ]] && losetup -d "$L" 2>/dev/null
+L="$(losetup -f --show "$work/part.img")"
+mkdir -p "$work/root/etc/ollie"
+if OLLIE_WINDOWS_USB_CMD="$here/../profile/airootfs/usr/local/share/ollie/windows-usb-install.cmd" PATH="$work/stub:$PATH" "$setup" --version 10 --iso "$work/tree" --part "$L" --no-label-check --no-efi-vars --usb yes --windows-part "$L3" --root "$work/root" --work "$work" >"$work/out.txt" 2>&1; then say "  ok: ran"; else say "  FAIL: ran ($(tail -n 2 "$work/out.txt" | tr '\n' ' '))"; fail=1; fi
+check "the part for Windows has the marker file the script looks for" bash -c "ntfsls '$L3' | grep -qx OLLIE-WINDOWS-TARGET"
+check "the part for Windows is NTFS (it can be listed)" bash -c "ntfsls '$L3' >/dev/null 2>&1"
+mounted || { say "  FAIL: could not open the Setup part"; fail=1; }
+check "the Windows Setup part has its marker" test -f "$work/m/ollie-setup-marker"
+check "the edition is Windows 10 Pro (number 2)" grep -q '^2' "$work/m/ollie-image-index.txt"
+check "Windows' files are on the Setup part" test -f "$work/m/sources/install.wim"
+d="$work/extract"; rm -rf "$d"; mkdir -p "$d"
+wimlib-imagex extract "$work/m/sources/boot.wim" 2 /Windows/System32/winpeshl.ini /Windows/System32/ollie-usb-install.cmd --dest-dir="$d" >/dev/null 2>&1
+check "Setup's start-up image runs the script instead of Setup" grep -q 'ollie-usb-install.cmd' "$d/winpeshl.ini"
+check "winpeshl.ini has Windows line endings" bash -c "grep -q \$'\\r' '$d/winpeshl.ini'"
+check "the script is there, with Windows line endings" bash -c "grep -q 'dism /apply-image' '$d/ollie-usb-install.cmd' && grep -q \$'\\r' '$d/ollie-usb-install.cmd'"
+check "the Setup image (2), not the PE image (1), got it" bash -c "! wimlib-imagex extract '$work/m/sources/boot.wim' 1 /Windows/System32/winpeshl.ini --dest-dir='$work/x1' >/dev/null 2>&1"
+check "the start-up image is whole" bash -c "wimlib-imagex verify '$work/m/sources/boot.wim' >/dev/null 2>&1"
+umount "$work/m"
+check "it is noted that the drive is USB" grep -q '^USB=1' "$work/root/etc/ollie/windows"
+
+say "== a Windows already on the part for Windows is never formatted over"
+make_iso || exit 1
+echo hi >"$work/winfile"
+ntfscp -f "$L3" "$work/winfile" Windows >/dev/null 2>&1
+rm -f "$work/part.img"; truncate -s 12G "$work/part.img"
+[[ -n $L ]] && losetup -d "$L" 2>/dev/null
+L="$(losetup -f --show "$work/part.img")"
+if OLLIE_WINDOWS_USB_CMD="$here/../profile/airootfs/usr/local/share/ollie/windows-usb-install.cmd" PATH="$work/stub:$PATH" "$setup" --version 10 --iso "$work/tree" --part "$L" --no-label-check --no-efi-vars --usb yes --windows-part "$L3" --root "$work/root" --work "$work" >"$work/out.txt" 2>&1; then say "  FAIL: it formatted over a Windows"; fail=1; else
+    grep -q "already a Windows" "$work/out.txt" && say "  ok: turned away" || { say "  FAIL: stopped, but not for that: $(tail -n 2 "$work/out.txt" | tr '\n' ' ')"; fail=1; }
+    check "the Windows file is still there" bash -c "ntfsls '$L3' | grep -qx Windows"
+fi
+losetup -d "$L3" 2>/dev/null
+
+say "== not USB: no script goes in, Setup runs as always"
+make_iso || exit 1
+if run_setup 10 "$work/tree"; then :; else say "  FAIL: ran"; fail=1; fi
+mounted && { check "Setup's own start-up image is untouched" bash -c "! wimlib-imagex extract '$work/m/sources/boot.wim' 2 /Windows/System32/ollie-usb-install.cmd --dest-dir='$work/x2' >/dev/null 2>&1"; umount "$work/m"; }
 
 if [[ ${1:-} == big ]]; then
     say "== an image over 4 GB is split"
