@@ -12,8 +12,9 @@ Before=display-manager.service sddm.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/lib/ollie/windows-plan
-# Putting Windows Setup on the drive takes minutes, and shows on the console.
-TimeoutStartSec=infinity
+# Putting Windows Setup on the drive takes minutes (never more than an hour:
+# the login screen is waiting), and shows on the console.
+TimeoutStartSec=3600
 StandardOutput=journal+console
 StandardError=journal+console
 

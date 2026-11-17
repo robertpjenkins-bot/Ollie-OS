@@ -131,6 +131,7 @@ STUB
 echo "\$*" >>"$work/setup.log"
 echo "PROGRESS 10 Checking"
 if [[ -n \${SETUP_FAIL:-} ]]; then echo "Error: the Windows file is damaged" >&2; exit 1; fi
+if [[ -n \${SETUP_HANG:-} ]]; then sleep 60; fi
 echo "PROGRESS 100 Windows Setup is ready"
 echo "NEXT-START Windows Setup"
 STUB
@@ -261,6 +262,20 @@ if want usbdrive; then
     grep -q 'pick "Unallocated Space"' "$work/upd.out" && bad "it still tells the person to use Windows Setup's screens"
     grep -q "blue screen" "$work/upd.out" || bad "no word about the blue screen"
     report "USB drive: Windows goes on without Windows Setup's checks, and says so"
+fi
+
+# ----- 1c. Windows Setup hangs: the start gives up after its time and falls back, it does not wait for hours -----
+if want autohang; then
+    world 100 150
+    truncate -s 3500M "$work/home/Downloads/Win10_22H2_English_x64v1.iso"
+    run_updater '1\n1\n\n1\n40\nyes\n\n' || bad "updater failed ($?)"
+    start=$SECONDS
+    SETUP_HANG=1 OLLIE_WINDOWS_SETUP_TIMEOUT=3 run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"
+    ((SECONDS - start < 30)) || bad "it waited $((SECONDS - start)) seconds for a hanging Windows Setup"
+    grep -q "took longer than" "$work/plan.out" || bad "it did not say Windows Setup took too long: $(tail -n 3 "$work/plan.out" | tr '\n' ' ')"
+    grep -q '^systemctl reboot' "$work/systemctl.log" 2>/dev/null && bad "it restarted although Windows Setup did not finish"
+    [[ -f $work/fake/etc/xdg/autostart/ollie-windows-install.desktop ]] || bad "Install Windows would not open at login"
+    report "Windows Setup hangs: the start gives up after its time, falls back to Install Windows at login"
 fi
 
 # ----- 2. free room at the end of the drive: Ollie OS is not touched -----

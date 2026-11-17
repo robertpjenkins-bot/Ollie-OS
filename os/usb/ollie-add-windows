@@ -53,9 +53,9 @@ if [[ ! -t 0 && -z "${OLLIE_WINDOWS_IN_TERMINAL:-}" ]]; then
     for term in konsole gnome-terminal kgx xfce4-terminal xterm; do
         have "$term" || continue
         case "$term" in
-        konsole) exec konsole --hold -e "$self" "$@" ;;
+        konsole) exec konsole -e "$self" "$@" ;;
         gnome-terminal | kgx) exec "$term" -- "$self" "$@" ;;
-        *) exec "$term" -hold -e "$self" "$@" ;;
+        *) exec "$term" -e "$self" "$@" ;;
         esac
     done
     have kdialog && kdialog --title "$TITLE" --error "No terminal program found. Run this from a terminal instead."
@@ -429,7 +429,7 @@ have efibootmgr || need+=(efibootmgr)
 have btrfs || need+=(btrfs-progs)
 if ((${#need[@]})); then
     echo "Adding: ${need[*]}"
-    sudo -n pacman -S --needed --noconfirm "${need[@]}" ||
+    timeout 900 sudo -n pacman -S --needed --noconfirm "${need[@]}" ||
         die "the tools could not be added (no internet?). Try again, or bring Ollie OS up to date with the Ollie OS Updater first."
 fi
 
@@ -437,7 +437,8 @@ say "Getting Windows $VERSION"
 if [[ -s $iso ]]; then
     echo "It is already downloaded ($iso)."
 elif [[ -n $mine ]]; then
-    echo "Keeping a copy of $mine for Windows Setup (no download needed)..."
+    echo "Keeping a copy of $mine for Windows Setup (no download needed)."
+    echo "It is about 6 GB: on a USB drive this can take 5 to 15 minutes. Please wait..."
     sudo -n install -d -m 0755 /var/lib/ollie || die "could not make /var/lib/ollie."
     sudo -n cp --reflink=auto -- "$mine" "$iso.part" || die "could not keep a copy (is the disk full? it needs about 6 GB)."
     sudo -n mv "$iso.part" "$iso" || die "could not keep the copy."
@@ -456,15 +457,25 @@ else
         if [[ $VERSION == 10 ]]; then page="https://www.microsoft.com/software-download/windows10ISO"; else page="https://www.microsoft.com/software-download/windows11"; fi
         xdg-open "$page" >/dev/null 2>&1 &
         found=""
-        for ((i = 0; i < 720 && !${#found}; i++)); do
+        waited=0
+        printf '  (Waiting for a file named like Win10_...iso to finish in %s. Press Enter to give up.)\n' "$dl"
+        while :; do
             while IFS= read -r -d '' f; do
                 [[ -e $f.crdownload || -e $f.part ]] && continue
                 s1="$(stat -c %s "$f")"
                 ((s1 > 3 * GiB)) || continue
                 sleep 4
                 [[ "$(stat -c %s "$f")" == "$s1" ]] && { found="$f"; break; }
-            done < <(find "$dl" -maxdepth 1 -type f \( -iname 'win*.iso' \) -mmin -90 -print0 2>/dev/null)
-            [[ -n $found ]] || sleep 5
+            done < <(find "$dl" -maxdepth 1 -type f \( -iname 'win*.iso' \) -mmin -180 -print0 2>/dev/null)
+            [[ -n $found ]] && break
+            if read -t 5 -r -n 1 _; then
+                die "stopped waiting. Run $TITLE again once the Windows file is in $dl."
+            fi
+            waited=$((waited + 5))
+            if ((waited % 60 == 0)); then
+                printf '  ...still waiting for the Windows file (%d min). Press Enter to give up.\n' $((waited / 60))
+            fi
+            ((waited >= 3600)) && break
         done
         [[ -n $found ]] || die "no Windows .iso showed up in $dl. Run $TITLE again once it is downloaded."
         echo "Found $found: keeping a copy for Windows Setup."
@@ -474,8 +485,8 @@ else
     if [[ -n $link ]]; then
         sudo -n install -d -m 0755 /var/lib/ollie || die "could not make /var/lib/ollie."
         # A half-done download stays, so running this again goes on from where it stopped.
-        sudo -n curl -fL --retry 5 --retry-delay 5 -C - --progress-bar -o "$iso.part" "$link" ||
-            die "downloading Windows $VERSION stopped (is the internet on?). Run $TITLE again: it goes on from where it stopped."
+        sudo -n curl -fL --retry 5 --retry-delay 5 --connect-timeout 30 --speed-limit 20000 --speed-time 90 -C - --progress-bar -o "$iso.part" "$link" ||
+            die "downloading Windows $VERSION stopped (the internet is off, or it was too slow for 90 seconds). Run $TITLE again: it goes on from where it stopped."
         size="$(stat -c %s "$iso.part" 2>/dev/null || echo 0)"
         if ((size <= 2 * GiB)); then
             sudo -n rm -f -- "$iso.part"
@@ -530,7 +541,12 @@ for ((i = delay; i > 0; i--)); do
     sleep 1
 done
 printf '\r  Restarting now...\n'
-sudo -n systemctl reboot
-((delay > 0)) && sleep 60 # (the computer is going down: do not show anything more)
+sudo -n systemctl reboot 2>/dev/null || sudo -n systemctl reboot -i 2>/dev/null || sudo -n reboot 2>/dev/null
+if ((delay > 0)); then
+    sleep 20 # (the computer is going down; if it is still here, something is holding the restart back)
+    printf '\n%sThe computer did not restart by itself.%s Everything is ready: restart it yourself\n' "$red$bold" "$reset"
+    printf '(the menu > Leave > Restart) and Windows %s goes in.\n\nPress Enter to close.' "$VERSION"
+    read -r _ || true
+fi
 exit 0
 

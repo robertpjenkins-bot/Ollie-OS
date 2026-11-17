@@ -98,16 +98,19 @@ if [[ $auto == 1 && -s $iso ]]; then
         sleep 1
     done
     log="$(mktemp)"
-    /usr/local/bin/ollie-windows-setup --version "$version" --iso "$iso" 2>&1 | tee "$log" | tee -a /var/log/ollie-windows-plan.log | while read -r word pct text; do
+    timeout "${OLLIE_WINDOWS_SETUP_TIMEOUT:-2700}" /usr/local/bin/ollie-windows-setup --version "$version" --iso "$iso" 2>&1 | tee "$log" | tee -a /var/log/ollie-windows-plan.log | while read -r word pct text; do
         [[ $word == PROGRESS ]] && msg "Windows $version Setup: $text ($pct%)"
     done
-    if ((PIPESTATUS[0] == 0)) && grep -q '^NEXT-START ' "$log"; then
+    setup_rc=${PIPESTATUS[0]}
+    if ((setup_rc == 0)) && grep -q '^NEXT-START ' "$log"; then
         rm -f -- "$iso" "$log"
         msg "Windows $version Setup is ready: restarting into it."
         sync
         systemctl reboot
     else
-        echo "Windows Setup could not be got ready by itself ($(sed -n 's/^Error: //p' "$log" | tail -n 1)): Install Windows opens at the next login to try again." >&2
+        why="$(sed -n 's/^Error: //p' "$log" | tail -n 1)"
+        ((setup_rc == 124)) && why="it took longer than $((${OLLIE_WINDOWS_SETUP_TIMEOUT:-2700} / 60)) minutes"
+        echo "Windows Setup could not be got ready by itself (${why:-see /var/log/ollie-windows-plan.log}): Install Windows opens at the next login to try again." >&2
         rm -f "$log"
     fi
 fi
