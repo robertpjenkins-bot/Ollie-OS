@@ -86,7 +86,8 @@ rm) shift; args=(); for a in "\$@"; do case "\$a" in /*) args+=("\$(map "\$a")")
 cp) shift 3; mkdir -p "\$(dirname "\$(map "\$2")")"; exec cp "\$1" "\$(map "\$2")" ;;
 mv) shift; exec mv "\$(map "\$1")" "\$(map "\$2")" ;;
 curl) shift; while [[ \$1 != -o ]]; do shift; done; echo "curl \$*" >>"$work/curl.log"; mkdir -p "\$(dirname "\$(map "\$2")")"; truncate -s 3G "\$(map "\$2")" ;;
-pacman | systemctl | sync | umount) exit 0 ;;
+systemctl) echo "\$*" >>"$work/sudo-systemctl.log"; exit 0 ;;
+pacman | sync | umount) exit 0 ;;
 efibootmgr) cat "$work/efibootmgr.out" 2>/dev/null ;;
 /usr/local/bin/ollie-windows-boot) echo "ollie-windows-boot ran" >>"$work/boot.log" ;;
 *) exec "\$@" ;;
@@ -141,7 +142,7 @@ STUB
 echo "https://example.invalid/windows.iso"
 STUB
     chmod +x "$b"/*
-    rm -f "$work/curl.log" "$work/boot.log" "$work/efibootmgr.out" "$work/setup.log" "$work/systemctl.log"
+    rm -f "$work/curl.log" "$work/boot.log" "$work/efibootmgr.out" "$work/setup.log" "$work/systemctl.log" "$work/sudo-systemctl.log"
 }
 
 # run_updater "INPUT LINES"
@@ -162,7 +163,7 @@ run_updater() {
     chmod +x "$work/bin/ollie-windows-boot-stub"
     printf '#!/bin/sh\necho "restart app ran" >>"%s/restart.log"\n' "$work" >"$work/bin/ollie-restart-windows-stub"
     chmod +x "$work/bin/ollie-restart-windows-stub"
-    printf '%b' "${FIRST-1\\n}$1" | WL_BOOT="$work/fake/boot" WL_ETC="$work/fake/etc" HOME="$work/home" PATH="$work/bin:$PATH" OLLIE_WINDOWS_IN_TERMINAL=1 OLLIE_APPS_SHARE="$work/share" timeout 120 "$work/upd.sh" >"$work/upd.out" 2>&1
+    printf '%b' "${FIRST-1\\n}$1" | OLLIE_RESTART_DELAY=0 WL_BOOT="$work/fake/boot" WL_ETC="$work/fake/etc" HOME="$work/home" PATH="$work/bin:$PATH" OLLIE_WINDOWS_IN_TERMINAL=1 OLLIE_APPS_SHARE="$work/share" timeout 120 "$work/upd.sh" >"$work/upd.out" 2>&1
     return $?
 }
 
@@ -221,6 +222,8 @@ if want shrink; then
     run_updater '1\n1\n\n1\n40\nyes\n\n' || bad "updater failed ($?)"
     [[ -f $work/fake/boot/ollie-windows-plan ]] || bad "no plan was left"
     grep -q "^GB=40" "$work/fake/boot/ollie-windows-plan" 2>/dev/null || bad "the plan does not say 40 GB"
+    grep -q "^systemctl reboot" "$work/sudo-systemctl.log" 2>/dev/null || bad "the updater did not restart the computer by itself"
+    grep -qi "restart the computer" "$work/upd.out" && bad "it still tells the person to restart it themselves"
     [[ -s $work/fake/var/lib/ollie/windows-10.iso ]] || bad "the Windows file was not kept"
     [[ -f $work/curl.log ]] && bad "it downloaded although a file was in Downloads"
     run_plan || bad "plan failed: $(tail -n 2 "$work/plan.out" | tr '\n' ' ')"

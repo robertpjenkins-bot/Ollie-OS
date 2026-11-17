@@ -98,7 +98,7 @@ if [[ $auto == 1 && -s $iso ]]; then
         sleep 1
     done
     log="$(mktemp)"
-    /usr/local/bin/ollie-windows-setup --version "$version" --iso "$iso" 2>&1 | tee "$log" | while read -r word pct text; do
+    /usr/local/bin/ollie-windows-setup --version "$version" --iso "$iso" 2>&1 | tee "$log" | tee -a /var/log/ollie-windows-plan.log | while read -r word pct text; do
         [[ $word == PROGRESS ]] && msg "Windows $version Setup: $text ($pct%)"
     done
     if ((PIPESTATUS[0] == 0)) && grep -q '^NEXT-START ' "$log"; then

@@ -489,21 +489,26 @@ printf 'MENU=1\nVERSION=%s\nGB=%s\nAUTO=1\n' "$VERSION" "$gb" | sudo -n tee /boo
     die "the plan could not be written to the start-up part (/boot)."
 sudo -n sync
 
-printf '\n%s  Done.%s Now:\n' "$green$bold" "$reset"
+printf '\n%s  Done.%s Windows %s goes in now, by itself:\n' "$green$bold" "$reset" "$VERSION"
 cat <<EOF2
-  1. Restart the computer (keep it plugged in). This first start takes several
-     minutes and the computer restarts by itself: Ollie OS makes the room, puts
-     the Windows $VERSION you saved onto the drive, and starts Windows Setup.
-     (If something goes wrong, "Install Windows" opens at the next login to do
-     it with you watching.)
-  2. In Windows Setup pick "Unallocated Space": that is the room kept for
+   - this computer restarts in a moment (keep it plugged in)
+   - on that start Ollie OS makes the room, puts Windows Setup on the drive and
+     restarts into it by itself: it takes several minutes, so wait
+   - in Windows Setup pick "Unallocated Space": that is the room kept for
      Windows. Ollie OS is not touched.
-  3. After that, Windows $VERSION is on the start-up menu next to Ollie OS: pick
-     it when the computer starts (4 seconds; the arrow keys stop it).
+   - afterwards Windows $VERSION is on the start-up menu next to Ollie OS
+   (If something goes wrong, "Install Windows" opens at the next login and
+    does it with you watching.)
 
-  If it is not wanted any more before the restart: delete /boot/ollie-windows-plan
-  and $iso.
-
-Press Enter to close.
 EOF2
-read -r _ || true
+delay="${OLLIE_RESTART_DELAY:-15}"
+printf '  Restarting in %s seconds. (Press Ctrl+C to restart later yourself.)\n' "$delay"
+for ((i = delay; i > 0; i--)); do
+    printf '\r  %2d ' "$i"
+    sleep 1
+done
+printf '\r  Restarting now...\n'
+sudo -n systemctl reboot
+((delay > 0)) && sleep 60 # (the computer is going down: do not show anything more)
+exit 0
+

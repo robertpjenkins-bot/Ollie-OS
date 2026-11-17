@@ -4,7 +4,8 @@
 # Microsoft or from an ISO file (for when the installer could not, or to
 # start over), then restarts into Windows Setup (ollie-windows-setup).
 #   ollie-windows-install [--at-login]   (--at-login: opened by itself after
-#   the Drive Writer's first start made room for Windows; it asks first)
+#   the Drive Writer's first start made room for Windows; it asks first, unless
+#   the Add Windows Updater saved a Windows file: then it just goes on and restarts)
 set -uo pipefail
 readonly TITLE="Install Windows"
 version="$(sed -n 's/^VERSION=//p' /etc/ollie/windows 2>/dev/null)"
@@ -15,7 +16,10 @@ ready="/var/lib/ollie/windows-$version.iso"
 
 if [[ ${1:-} == --at-login ]]; then
     [[ -f /boot/loader/entries/windows.conf ]] && exit 0
-    kdialog --title "$TITLE" --icon ollie-restart-windows --yes-label "Yes, now" --no-label "Later" --yesno \
+    # With the Windows file the Add Windows Updater saved, the person already said yes:
+    # no question, and no "restart now?" at the end (it restarts by itself).
+    [[ -n $ready ]] && auto=1
+    [[ -n ${auto:-} ]] || kdialog --title "$TITLE" --icon ollie-restart-windows --yes-label "Yes, now" --no-label "Later" --yesno \
         "The room for Windows $version is ready on this drive. Get Windows $version Setup ready now?
 
 $([[ -n $ready ]] && echo "Windows $version is already downloaded." || echo "It needs the internet (about 6 GB), or a Windows .iso file you have.")
@@ -80,6 +84,12 @@ $(sed -n 's/^Error: //p' "$log" | tail -n 1)"
 fi
 next="$(grep -c '^NEXT-START ' "$log")"
 rm -f "$log"
+if [[ -n ${auto:-} ]] && ((next)); then
+    kdialog --title "$TITLE" --passivepopup "Windows $version Setup is starting: restarting in 10 seconds. In Windows Setup pick \"Unallocated Space\"." 10 2>/dev/null
+    sleep 10
+    systemctl reboot
+    exit 0
+fi
 if kdialog --title "$TITLE" --yes-label "Restart now" --no-label "Later" --yesno "Windows $version Setup is ready.
 
 $( ((next)) && echo "When the computer restarts, Windows Setup starts." || echo "When the computer restarts, pick \"WINSETUP\" in its start-up menu (Dell: F12, Mac: hold Option).") In Windows Setup:
