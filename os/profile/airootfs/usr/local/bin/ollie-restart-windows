@@ -1,7 +1,58 @@
 #!/bin/bash
-# Restart into Windows: restarts the computer straight into Windows Boot
-# Manager on Ollie OS's start-up menu (added by ollie-windows-boot), this once.
-if ! systemctl reboot --boot-loader-entry=auto-windows; then
-    kdialog --title "Restart into Windows" --error "Windows is not on Ollie OS's start-up menu on this computer. Run the Windows Boot Updater here first, or pick Windows in the menu when the computer starts." 2>/dev/null
+# Restart into Windows: restarts the computer straight into Windows, this once,
+# without waiting at (or picking from) Ollie OS's start-up menu.
+#
+# The start-up menu entry is the file /boot/loader/entries/windows.conf that
+# ollie-windows-boot makes, so its id is "windows.conf" (with "auto-entries no"
+# there is no automatic "auto-windows" one). Ids are tried in turn; systemd
+# turns a restart down at once when the menu does not know the id, so the next
+# is tried. If none is known (the menu does not say what it has, or Windows
+# is not on it), the computer's own start-up list is used: its "Windows Boot
+# Manager" is chosen for the next start only (BootNext), then it restarts.
+#   ollie-restart-windows [--dry-run]     (--dry-run: say what it would do)
+set -uo pipefail
+dry=""
+[[ ${1:-} == --dry-run ]] && dry=1
+say() { printf '%s\n' "$*"; }
+go() { # go COMMAND...: run it, or just say it when --dry-run
+    if [[ -n $dry ]]; then say "would run: $*"; return 0; fi
+    "$@"
+}
+
+# 1. Ollie OS's start-up menu knows Windows (ollie-windows-boot put it there).
+for id in windows.conf windows auto-windows; do
+    if [[ -n $dry ]]; then
+        say "would try: systemctl reboot --boot-loader-entry=$id"
+        continue
+    fi
+    if systemctl reboot --boot-loader-entry="$id" 2>/dev/null; then
+        exit 0
+    fi
+done
+
+# 2. The computer's own start-up list has Windows Boot Manager.
+if command -v efibootmgr >/dev/null 2>&1 && [[ -d /sys/firmware/efi || -n $dry ]]; then
+    entries="$(sudo -n efibootmgr 2>/dev/null || efibootmgr 2>/dev/null)"
+    num="$(sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? Windows Boot Manager.*/\1/p' <<<"$entries" | head -n 1)"
+    if [[ -n $num ]]; then
+        if [[ -n $dry ]]; then
+            say "would run: efibootmgr -n $num, then systemctl reboot"
+            exit 0
+        fi
+        if sudo -n efibootmgr -n "$num" >/dev/null 2>&1 || efibootmgr -n "$num" >/dev/null 2>&1; then
+            systemctl reboot && exit 0
+        fi
+    fi
+fi
+
+msg="Windows is not on Ollie OS's start-up menu on this computer.
+
+If Windows is installed on this computer, put it on the menu: run
+\"ollie-windows-boot\" in a terminal (or the Add Windows Updater, \"keep it\"),
+then try again. Or pick Windows in the start-up menu when the computer starts."
+if [[ -n $dry ]]; then
+    say "would say: $msg"
     exit 1
 fi
+kdialog --title "Restart into Windows" --error "$msg" 2>/dev/null || printf '%s\n' "$msg" >&2
+exit 1

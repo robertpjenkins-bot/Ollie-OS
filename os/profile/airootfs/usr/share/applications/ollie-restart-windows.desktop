@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=Restart into Windows
-Comment=Restart this computer into Windows 10
+Comment=Restart this computer straight into Windows
 Exec=/usr/local/bin/ollie-restart-windows
 Icon=ollie-restart-windows
 Terminal=false
