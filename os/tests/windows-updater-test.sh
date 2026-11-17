@@ -165,7 +165,9 @@ run_updater() {
     chmod +x "$work/bin/ollie-windows-boot-stub"
     printf '#!/bin/sh\necho "restart app ran" >>"%s/restart.log"\n' "$work" >"$work/bin/ollie-restart-windows-stub"
     chmod +x "$work/bin/ollie-restart-windows-stub"
-    printf '%b' "${FIRST-1\\n}$1" | OLLIE_RESTART_DELAY=0 WL_BOOT="$work/fake/boot" WL_ETC="$work/fake/etc" HOME="$work/home" PATH="$work/bin:$PATH" OLLIE_WINDOWS_IN_TERMINAL=1 OLLIE_APPS_SHARE="$work/share" timeout 120 "$work/upd.sh" >"$work/upd.out" 2>&1
+    local accenv=(OLLIE_WINDOWS_USER=Tester OLLIE_WINDOWS_PASSWORD=tester123)
+    [[ -n ${ACCT_PROMPT:-} ]] && accenv=()
+    printf '%b' "${FIRST-1\\n}$1" | env "${accenv[@]}" OLLIE_RESTART_DELAY=0 WL_BOOT="$work/fake/boot" WL_ETC="$work/fake/etc" HOME="$work/home" PATH="$work/bin:$PATH" OLLIE_WINDOWS_IN_TERMINAL=1 OLLIE_APPS_SHARE="$work/share" timeout 120 "$work/upd.sh" >"$work/upd.out" 2>&1
     return $?
 }
 
@@ -235,6 +237,12 @@ if want shrink; then
     [[ -f $work/setup.log ]] && bad "Windows Setup was put on the drive at start-up (black screen, no progress): it must wait for the login"
     grep -q '^systemctl reboot' "$work/systemctl.log" 2>/dev/null && bad "the start-up step restarted the computer"
     [[ -s $work/fake/var/lib/ollie/windows-10.iso ]] || bad "the saved Windows file was removed before it was used"
+    acct="$work/fake/var/lib/ollie/windows-account"
+    [[ -f $acct ]] || bad "the Windows account was not saved"
+    [[ "$(stat -c %a "$acct" 2>/dev/null)" == 600 ]] || bad "the account file is not private (mode $(stat -c %a "$acct" 2>/dev/null))"
+    grep -q '^USER=Tester' "$acct" && grep -q '^COMPUTER=TESTER-PC' "$acct" || bad "the account file lacks the name"
+    [[ "$(sed -n 's/^PASSWORD_B64=//p' "$acct" | base64 -d | iconv -f UTF-16LE -t UTF-8)" == tester123Password ]] || bad "the stored password is not the typed one"
+    grep -rq tester123 "$acct" "$work/upd.out" "$work/fake/boot/ollie-windows-plan" 2>/dev/null && bad "the password is in plain text somewhere (account file, screen or plan)"
     [[ -f $work/fake/etc/xdg/autostart/ollie-windows-install.desktop ]] || bad "Install Windows would not open at login to go on"
     grep -q -- "--at-login" "$work/fake/etc/xdg/autostart/ollie-windows-install.desktop" || bad "the login entry is not the --at-login one"
     report "full drive: Ollie OS made smaller, data part after it kept, the rest waits for the login (progress bar)"
@@ -250,6 +258,25 @@ if want atboot; then
     grep -q -- "--version 10 --iso $work/fake/var/lib/ollie/windows-10.iso" "$work/setup.log" 2>/dev/null || bad "Windows Setup was not put on the drive"
     grep -q '^reboot' "$work/systemctl.log" 2>/dev/null || bad "it did not restart into Windows Setup"
     report "boot-time stage (test switch): Windows Setup put on, restart"
+fi
+
+# ----- A1. The account questions: bad names turned away, passwords must match, nothing shown -----
+if want account; then
+    world 100 150
+    truncate -s 3500M "$work/home/Downloads/Win10_22H2_English_x64v1.iso"
+    # Windows 10, regular, Enter (Downloads file), drive 1, 40 GB, then the account: bad name, reserved name, a good name,
+    # passwords that differ, then ones that match; then yes
+    ACCT_PROMPT=1 run_updater '1\n1\n\n1\n40\nBad/Name\nAdministrator\nBobby Bro\nsecret1\nsecret2\nsecret3\nsecret3\nyes\n\n' || bad "updater failed ($?)"
+    grep -q "Use 1 to 20 letters" "$work/upd.out" || bad "a bad name was not turned away"
+    grep -q "keeps that name for itself" "$work/upd.out" || bad "Administrator was accepted"
+    grep -q "They are not the same" "$work/upd.out" || bad "passwords that differ were accepted"
+    acct="$work/fake/var/lib/ollie/windows-account"
+    grep -q '^USER=Bobby Bro' "$acct" 2>/dev/null || bad "the name was not saved"
+    grep -q '^COMPUTER=BOBBYBRO-PC' "$acct" 2>/dev/null || bad "the computer name is not BOBBYBRO-PC: $(grep COMPUTER "$acct" 2>/dev/null)"
+    [[ "$(sed -n 's/^PASSWORD_B64=//p' "$acct" 2>/dev/null | base64 -d | iconv -f UTF-16LE -t UTF-8)" == secret3Password ]] || bad "the password saved is not the one typed twice"
+    grep -rq 'secret[123]' "$work/upd.out" "$acct" "$work/fake/boot/ollie-windows-plan" 2>/dev/null && bad "a password is shown or stored in plain text"
+    grep -q 'Bobby Bro' "$work/upd.out" || bad "the confirm text does not name the account"
+    report "Account: bad names turned away, passwords must match, stored scrambled, never shown"
 fi
 
 # ----- 1b. putting Windows Setup on the drive fails: no restart, Install Windows at login -----

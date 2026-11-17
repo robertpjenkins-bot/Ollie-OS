@@ -10,7 +10,9 @@
 # (ollie-windows-boot), and this part is removed again.
 #
 # Windows Setup gets, next to it:
-#   autounattend.xml: Windows 11 installs on computers without TPM 2.0 or
+#   autounattend.xml: the account the Add Windows Updater asked for (Windows
+#       makes it by itself, no questions; its login screen asks for the
+#       password), and: Windows 11 installs on computers without TPM 2.0 or
 #       Secure Boot too (Microsoft's LabConfig switches). Nothing else is
 #       answered: Setup still asks where to install, and nothing is wiped.
 #   SetupComplete.cmd (run once by Windows at the end of Setup): Windows
@@ -151,14 +153,41 @@ else
 fi
 
 progress 94 "Getting Windows Setup ready"
-# (Only Windows 11 has the checks to bypass; Windows 10 gets no answer file, so
-# nothing there can be misread.)
-if [[ $version == 11 ]]; then
-cat >"$tmp/setup/autounattend.xml" <<'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Ollie OS: Windows 11 installs on computers without TPM 2.0 or Secure Boot
-     too. Nothing else is answered: Setup asks where to install it. -->
-<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+# --- Windows' answer file -------------------------------------------------------------------
+# The account the Add Windows Updater asked for (a file only root can read:
+# USER, COMPUTER, PASSWORD_B64 = base64 of UTF-16 "password" + "Password", the way
+# answer files keep it). Windows then sets itself up with no questions: it
+# makes that account, and its login screen asks for the password.
+acct_file="${OLLIE_WINDOWS_ACCOUNT:-${root%/}/var/lib/ollie/windows-account}"
+acct_user="" acct_comp="" acct_pw=""
+if [[ -r $acct_file ]]; then
+    u="$(sed -n 's/^USER=//p' "$acct_file" | head -n 1)" c="$(sed -n 's/^COMPUTER=//p' "$acct_file" | head -n 1)" w="$(sed -n 's/^PASSWORD_B64=//p' "$acct_file" | head -n 1)"
+    if [[ $u =~ ^[A-Za-z0-9][A-Za-z0-9\ _-]{0,19}$ && $c =~ ^[A-Za-z0-9-]{1,15}$ && $w =~ ^[A-Za-z0-9+/=]+$ ]]; then
+        acct_user=$u acct_comp=$c acct_pw=$w
+    else
+        die "the Windows account file is not in the right form: run the Add Windows Updater again."
+    fi
+fi
+# Windows' name for the time zone (a few; else Windows keeps its own).
+tz=""
+case "$(readlink "${root%/}/etc/localtime" 2>/dev/null | sed -n 's|.*/zoneinfo/||p')" in
+America/Los_Angeles) tz="Pacific Standard Time" ;;
+America/Denver) tz="Mountain Standard Time" ;;
+America/Phoenix) tz="US Mountain Standard Time" ;;
+America/Chicago) tz="Central Standard Time" ;;
+America/New_York) tz="Eastern Standard Time" ;;
+America/Anchorage) tz="Alaskan Standard Time" ;;
+Pacific/Honolulu) tz="Hawaiian Standard Time" ;;
+Europe/London) tz="GMT Standard Time" ;;
+UTC | Etc/UTC) tz="UTC" ;;
+esac
+unattend_xml() { # unattend_xml WITH_BYPASS WITH_ACCOUNT: the answer file, on stdout
+    echo '<?xml version="1.0" encoding="utf-8"?>'
+    echo '<!-- Ollie OS: no questions. Windows 11 installs on computers without TPM 2.0 or Secure Boot too (when asked),'
+    echo '     and Windows makes the account that was asked for. -->'
+    echo '<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">'
+    if [[ -n $1 ]]; then
+        cat <<'XML'
   <settings pass="windowsPE">
     <component name="Microsoft-Windows-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <RunSynchronous>
@@ -170,17 +199,81 @@ cat >"$tmp/setup/autounattend.xml" <<'EOF'
       </RunSynchronous>
     </component>
   </settings>
-</unattend>
-EOF
+XML
+    fi
+    if [[ -n $2 ]]; then
+        cat <<XML
+  <settings pass="specialize">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <ComputerName>$acct_comp</ComputerName>
+    </component>
+  </settings>
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-International-Core" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <InputLocale>en-US</InputLocale>
+      <SystemLocale>en-US</SystemLocale>
+      <UILanguage>en-US</UILanguage>
+      <UserLocale>en-US</UserLocale>
+    </component>
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <HideLocalAccountScreen>true</HideLocalAccountScreen>
+        <HideOEMRegistrationScreen>true</HideOEMRegistrationScreen>
+        <HideOnlineAccountScreens>true</HideOnlineAccountScreens>
+        <HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
+        <ProtectYourPC>3</ProtectYourPC>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+        <SkipUserOOBE>true</SkipUserOOBE>
+      </OOBE>
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>$acct_user</Name>
+            <DisplayName>$acct_user</DisplayName>
+            <Group>Administrators</Group>
+            <Password>
+              <Value>$acct_pw</Value>
+              <PlainText>false</PlainText>
+            </Password>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>${tz:+
+      <TimeZone>$tz</TimeZone>}
+    </component>
+  </settings>
+XML
+    fi
+    echo '</unattend>'
+}
+# Where it goes depends on the way Windows is put on: with Windows Setup
+# (autounattend.xml, at the root of the Windows Setup part), or the USB way
+# (ollie-unattend.xml, which the script copies into Windows; see below).
+usb_on=""
+if [[ $usb == yes ]]; then
+    usb_on=1
+elif [[ $usb == auto && -n $efi_vars ]]; then
+    d="$(lsblk -no PKNAME "$part" 2>/dev/null | head -n 1)"
+    [[ -n $d && "$(lsblk -dno TRAN "/dev/$d" 2>/dev/null | head -n 1)" == usb ]] && usb_on=1
+fi
+if [[ -z $usb_on ]] && [[ $version == 11 || -n $acct_user ]]; then
+    umask 077
+    unattend_xml "$([[ $version == 11 ]] && echo 1)" "$acct_user" >"$tmp/setup/autounattend.xml"
+    umask 022
 fi
 # Ollie OS's menu as Windows Boot Manager's program: with Secure Boot set up,
 # through shim (the menu alone is signed only with Ollie OS's own key).
 menu='\EFI\systemd\systemd-bootx64.efi'
 [[ -f ${root%/}/boot/EFI/ollie/shimx64.efi ]] && menu='\EFI\ollie\shimx64.efi'
+if [[ -n $usb_on ]]; then
+    sc_boot="rem Ollie OS (USB way): Windows start-up files are on Ollie OS start-up part already."
+else
+    sc_boot="rem Ollie OS: Windows Boot Manager starts Ollie OS's start-up menu (both are on it).
+bcdedit /set {bootmgr} path $menu"
+fi
 install -D -m 0644 /dev/stdin "$tmp/setup/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd" <<EOF
 @echo off
-rem Ollie OS: Windows Boot Manager starts Ollie OS's start-up menu (both are on it).
-bcdedit /set {bootmgr} path $menu
+$sc_boot
 rem The clock in UTC, like Ollie OS, so the time is right after switching.
 reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f
 rem No automatic BitLocker: it would ask for a recovery key because of the menu.
@@ -208,13 +301,6 @@ umount "$tmp/setup"
 [[ -z $bad ]] || die "the copy of $bad on the drive is not the same as in the Windows file (is the drive failing, or full?). Nothing was started."
 
 # --- A drive Windows Setup will not install to (USB): Ollie OS does Setup's job itself ----------------
-usb_on=""
-if [[ $usb == yes ]]; then
-    usb_on=1
-elif [[ $usb == auto && -n $efi_vars ]]; then
-    d="$(lsblk -no PKNAME "$part" 2>/dev/null | head -n 1)"
-    [[ -n $d && "$(lsblk -dno TRAN "/dev/$d" 2>/dev/null | head -n 1)" == usb ]] && usb_on=1
-fi
 if [[ -n $usb_on ]]; then
     progress 91 "This drive is connected by USB: Windows Setup would refuse it, so Windows is put on another way"
     usbcmd="${OLLIE_WINDOWS_USB_CMD:-/usr/local/share/ollie/windows-usb-install.cmd}"
@@ -258,6 +344,11 @@ if [[ -n $usb_on ]]; then
     # 2. On the Windows Setup part: a marker, the edition to put on (Pro if there is one), and the script in Setup's start-up image.
     mount "$part" "$tmp/setup" || die "the Windows Setup part could not be opened again."
     echo "Ollie OS: Windows Setup part" >"$tmp/setup/ollie-setup-marker"
+    if [[ -n $acct_user ]]; then
+        umask 077
+        unattend_xml "" "$acct_user" >"$tmp/setup/ollie-unattend.xml"
+        umask 022
+    fi
     img=""
     for f in "$tmp"/setup/sources/install.wim "$tmp"/setup/sources/install.esd "$tmp"/setup/sources/install.swm; do [[ -f $f ]] && img="$f" && break; done
     idx="$(wimlib-imagex info "$img" 2>/dev/null | awk '

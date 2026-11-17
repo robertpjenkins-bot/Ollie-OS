@@ -147,6 +147,60 @@ make_iso || exit 1
 if run_setup 10 "$work/tree"; then :; else say "  FAIL: ran"; fail=1; fi
 mounted && { check "Setup's own start-up image is untouched" bash -c "! wimlib-imagex extract '$work/m/sources/boot.wim' 2 /Windows/System32/ollie-usb-install.cmd --dest-dir='$work/x2' >/dev/null 2>&1"; umount "$work/m"; }
 
+say "== the account Windows is set up with (no questions, a password at the login screen)"
+cat >"$work/account" <<ACC
+USER=Bobby Bro
+COMPUTER=BOBBYBRO-PC
+PASSWORD_B64=$(printf '%s' 'pass123Password' | iconv -f UTF-8 -t UTF-16LE | base64 -w0)
+ACC
+for ver in 10 11; do
+    make_iso || exit 1
+    rm -f "$work/part.img"; truncate -s 12G "$work/part.img"
+    [[ -n $L ]] && losetup -d "$L" 2>/dev/null
+    L="$(losetup -f --show "$work/part.img")"
+    mkdir -p "$work/root/etc/ollie"
+    if OLLIE_WINDOWS_ACCOUNT="$work/account" PATH="$work/stub:$PATH" "$setup" --version "$ver" --iso "$work/tree" --part "$L" --no-label-check --no-efi-vars --usb no --root "$work/root" --work "$work" >"$work/out.txt" 2>&1; then say "  ok: Windows $ver ran with an account"; else say "  FAIL: ran ($(tail -n 2 "$work/out.txt" | tr '\n' ' '))"; fail=1; fi
+    mounted || { say "  FAIL: could not open the Setup part"; fail=1; continue; }
+    x="$work/m/autounattend.xml"
+    check "Windows $ver: an answer file is there" test -f "$x"
+    check "Windows $ver: it is well-formed" python3 -c "import sys,xml.dom.minidom as m; m.parse(sys.argv[1])" "$x"
+    check "Windows $ver: it makes the account Bobby Bro, an administrator" bash -c "grep -q '<Name>Bobby Bro</Name>' '$x' && grep -q '<Group>Administrators</Group>' '$x'"
+    check "Windows $ver: it names the computer BOBBYBRO-PC" grep -q '<ComputerName>BOBBYBRO-PC</ComputerName>' "$x"
+    check "Windows $ver: the password is not in plain text" bash -c "! grep -q 'pass123' '$x' && grep -q '<PlainText>false</PlainText>' '$x'"
+    check "Windows $ver: the stored password decodes to the typed one (+Password)" bash -c "v=\$(sed -n 's#.*<Value>\\(.*\\)</Value>.*#\\1#p' '$x'); [[ \"\$(printf '%s' \"\$v\" | base64 -d | iconv -f UTF-16LE -t UTF-8)\" == pass123Password ]]"
+    check "Windows $ver: no automatic login (the login screen asks)" bash -c "! grep -qi 'AutoLogon' '$x'"
+    check "Windows $ver: nothing is asked (OOBE hidden)" bash -c "grep -q '<HideEULAPage>true' '$x' && grep -q '<HideOnlineAccountScreens>true' '$x' && grep -q '<SkipMachineOOBE>true' '$x'"
+    if [[ $ver == 11 ]]; then
+        check "Windows 11: the checks are bypassed too" grep -q BypassTPMCheck "$x"
+    else
+        check "Windows 10: no bypass section" bash -c "! grep -q LabConfig '$x'"
+    fi
+    umount "$work/m"
+done
+
+say "== the account, the USB way: the file for the script, no copy with the password at Setup's root"
+make_iso || exit 1
+rm -f "$work/ntfs.img"; truncate -s 3G "$work/ntfs.img"; L3="$(losetup -f --show "$work/ntfs.img")"
+rm -f "$work/part.img"; truncate -s 12G "$work/part.img"
+[[ -n $L ]] && losetup -d "$L" 2>/dev/null
+L="$(losetup -f --show "$work/part.img")"
+if OLLIE_WINDOWS_ACCOUNT="$work/account" OLLIE_WINDOWS_USB_CMD="$here/../profile/airootfs/usr/local/share/ollie/windows-usb-install.cmd" PATH="$work/stub:$PATH" "$setup" --version 10 --iso "$work/tree" --part "$L" --no-label-check --no-efi-vars --usb yes --windows-part "$L3" --root "$work/root" --work "$work" >"$work/out.txt" 2>&1; then say "  ok: ran"; else say "  FAIL: ran ($(tail -n 2 "$work/out.txt" | tr '\n' ' '))"; fail=1; fi
+mounted
+check "the answer file for the script is there" test -f "$work/m/ollie-unattend.xml"
+check "the first-start script has no start-up-path change (the files are already on Ollie OS's part)" bash -c "! grep -q 'bcdedit' '$work/m/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd' && grep -q RealTimeIsUniversal '$work/m/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd'"
+check "it is well-formed and makes the account" bash -c "python3 -c \"import sys,xml.dom.minidom as m; m.parse(sys.argv[1])\" '$work/m/ollie-unattend.xml' && grep -q '<Name>Bobby Bro</Name>' '$work/m/ollie-unattend.xml'"
+check "no autounattend.xml at Setup's root (Setup is not run)" test ! -e "$work/m/autounattend.xml"
+d="$work/extract2"; rm -rf "$d"; mkdir -p "$d"
+wimlib-imagex extract "$work/m/sources/boot.wim" 2 /Windows/System32/ollie-usb-install.cmd --dest-dir="$d" >/dev/null 2>&1
+check "the script copies it into Windows (Panther\\Unattend)" grep -q 'Panther.Unattend.unattend.xml' "$d/ollie-usb-install.cmd"
+check "the script removes the copy with the password afterwards" grep -q 'del /f /q %S%.ollie-unattend.xml' "$d/ollie-usb-install.cmd"
+umount "$work/m"; losetup -d "$L3" 2>/dev/null
+
+say "== a damaged account file is turned away"
+printf 'USER=Bobby<script>\nCOMPUTER=X\nPASSWORD_B64=!!!\n' >"$work/badaccount"
+make_iso || exit 1
+if OLLIE_WINDOWS_ACCOUNT="$work/badaccount" run_setup 10 "$work/tree"; then say "  FAIL: accepted"; fail=1; else grep -q "not in the right form" "$work/out.txt" && say "  ok: turned away" || { say "  FAIL: stopped for another reason: $(tail -n 2 "$work/out.txt" | tr '\n' ' ')"; fail=1; }; fi
+
 if [[ ${1:-} == big ]]; then
     say "== an image over 4 GB is split"
     make_iso big || exit 1

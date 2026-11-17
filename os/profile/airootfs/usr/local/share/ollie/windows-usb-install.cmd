@@ -56,6 +56,18 @@ goto applied
 :applied
 if errorlevel 1 goto failed
 if not exist %T%\Windows\System32\winload.efi goto failed
+if not exist %S%\ollie-unattend.xml goto nounattend
+echo   Setting Windows up with the account you asked for...
+mkdir %T%\Windows\Panther\Unattend >nul 2>&1
+copy /y %S%\ollie-unattend.xml %T%\Windows\Panther\Unattend\unattend.xml >nul
+copy /y %S%\ollie-unattend.xml %T%\Windows\Panther\unattend.xml >nul
+del /f /q %S%\ollie-unattend.xml >nul 2>&1
+:nounattend
+rem Windows runs this once at the end of its first start: the clock in UTC (like Ollie OS) and no BitLocker.
+if not exist "%S%\sources\$OEM$\$$\Setup\Scripts\SetupComplete.cmd" goto nosetupcomplete
+mkdir %T%\Windows\Setup\Scripts >nul 2>&1
+copy /y "%S%\sources\$OEM$\$$\Setup\Scripts\SetupComplete.cmd" %T%\Windows\Setup\Scripts\SetupComplete.cmd >nul
+:nosetupcomplete
 echo.
 echo   Making Windows start...
 bcdboot %T%\Windows /s %S% /f UEFI

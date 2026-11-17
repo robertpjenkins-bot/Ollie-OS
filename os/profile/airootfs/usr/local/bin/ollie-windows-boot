@@ -118,4 +118,5 @@ if [[ $found == "$boot" && -n $version ]] && command -v efibootmgr >/dev/null &&
     rm -f /var/tmp/ollie-windows-1[01].iso.part
 fi
 sync
+rm -f /var/lib/ollie/windows-account # the account it was installed with is not needed any more
 echo "Windows${version:+ $version} (from $found) is on Ollie OS's start-up menu."

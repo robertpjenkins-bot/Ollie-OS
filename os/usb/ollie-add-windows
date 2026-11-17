@@ -371,6 +371,45 @@ while :; do
     echo "Please type a number from $MIN_GB to $max_gb."
 done
 
+# --- 5. Your Windows account ----------------------------------------------------------------
+# Windows then sets itself up with no questions: it makes this account, and the
+# login screen asks for its password. (OLLIE_WINDOWS_USER / OLLIE_WINDOWS_PASSWORD
+# answer these without asking: for tests and scripts.)
+printf '\n%s5. Your Windows account%s\n\n' "$bold" "$reset"
+printf 'Windows will not ask you anything when it starts the first time. It makes this\naccount, and the login screen asks for its password.\n\n'
+reserved=" administrator guest system defaultaccount wdagutilityaccount krbtgt "
+if [[ -n ${OLLIE_WINDOWS_USER:-} ]]; then
+    wuser="$OLLIE_WINDOWS_USER" wpass="${OLLIE_WINDOWS_PASSWORD:-}"
+else
+    while :; do
+        read -rp "User name for Windows [Ollie]: " wuser || exit 1
+        wuser="${wuser:-Ollie}"
+        if [[ ! $wuser =~ ^[A-Za-z0-9][A-Za-z0-9\ _-]{0,19}$ ]]; then
+            echo "Use 1 to 20 letters, numbers, spaces, - or _ (starting with a letter or number)."
+        elif [[ $reserved == *" ${wuser,,} "* ]]; then
+            echo "Windows keeps that name for itself. Pick another."
+        else
+            break
+        fi
+    done
+    while :; do
+        read -rsp "Password for $wuser (nothing shows while you type): " wpass || exit 1
+        echo
+        if [[ -z $wpass ]]; then
+            echo "Please type a password."
+            continue
+        fi
+        read -rsp "Type it again: " wpass2 || exit 1
+        echo
+        [[ $wpass == "$wpass2" ]] && break
+        echo "They are not the same. Try again."
+    done
+    unset wpass2
+fi
+# The computer's name in Windows: the user name's letters and numbers, then -PC.
+wcomp="$(printf '%s' "$wuser" | tr -cd 'A-Za-z0-9-' | tr 'a-z' 'A-Z' | cut -c1-12)"
+wcomp="${wcomp:-OLLIE}-PC"
+
 # What happens about Windows itself: told the way the earlier step found it.
 if [[ -n $mine ]]; then
     getline="Windows $VERSION is not downloaded: the file you picked ($mine) is used."
@@ -407,6 +446,8 @@ ${bold}Before this starts${reset}
 ${usbline:+$usbline
 }  - At the next start the computer does everything by itself (it takes several
     minutes) and restarts into Windows Setup. In Windows Setup you pick the room.
+  - Windows is set up with no questions: the account "$wuser" (computer name $wcomp), with the
+    password you typed, which the login screen asks for.
   - Windows needs its own licence (a product key). It is not included.
   - If this drive has BitLocker on, or you are not sure, stop here.
 
@@ -504,6 +545,14 @@ sudo -n systemctl enable ollie-windows-plan.service >/dev/null 2>&1 ||
 
 say "Leaving the plan for the next start"
 # (The file is used once; ollie-windows-plan.service takes it away first.)
+# The account for Windows, for ollie-windows-setup (only root can read it; the
+# password is kept the way Windows' answer files keep it: base64 of UTF-16, not secret
+# from someone who has the drive, so it is removed again once Windows is on).
+wpass_b64="$(printf '%s' "${wpass}Password" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
+printf 'USER=%s\nCOMPUTER=%s\nPASSWORD_B64=%s\n' "$wuser" "$wcomp" "$wpass_b64" |
+    sudo -n install -D -m 0600 /dev/stdin /var/lib/ollie/windows-account ||
+    die "the Windows account could not be saved."
+unset wpass wpass_b64
 printf 'MENU=1\nVERSION=%s\nGB=%s\nAUTO=1\n' "$VERSION" "$gb" | sudo -n tee /boot/ollie-windows-plan >/dev/null ||
     die "the plan could not be written to the start-up part (/boot)."
 sudo -n sync
@@ -517,7 +566,8 @@ cat <<EOF2
      takes several minutes, so wait. There is nothing to click.
    - then the computer restarts into Ollie OS, and Windows $VERSION is on the
      start-up menu next to it. The first time you pick Windows, it finishes
-     setting itself up (language, name), which takes a few more minutes.
+     setting itself up with no questions (a few more minutes), then shows its
+     login screen: the user is "$wuser", and it asks for the password you typed.
    (If something goes wrong, the blue or red screen says what.)
 
 EOF2
@@ -528,7 +578,8 @@ cat <<EOF2
      restarts into it by itself: it takes several minutes, so wait
    - in Windows Setup pick "Unallocated Space": that is the room kept for
      Windows. Ollie OS is not touched.
-   - afterwards Windows $VERSION is on the start-up menu next to Ollie OS
+   - afterwards Windows $VERSION is on the start-up menu next to Ollie OS; its login
+     screen has the user "$wuser" and asks for the password you typed
    (If something goes wrong, "Install Windows" opens at the next login and
     does it with you watching.)
 
