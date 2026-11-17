@@ -1,5 +1,7 @@
 #!/bin/bash
-# Windows Updater: on an Ollie OS that is already installed (on a drive or
+# Windows Updater (with a Fix the Windows boot choice at the start: it puts the
+# newest Restart into Windows in and Windows on Ollie OS's start-up menu again).
+# On an Ollie OS that is already installed (on a drive or
 # inside a computer), adds Windows 10 or 11 next to Ollie OS, the way the
 # Drive Writer and the Installer do it when you say yes to Windows. It asks:
 #   1. Windows 10 or 11,
@@ -82,6 +84,46 @@ install_files() { # what Ollie OS needs for Windows, from inside this app
     have kbuildsycoca6 && kbuildsycoca6 >/dev/null 2>&1
     return 0
 }
+
+# --- What to do? ----------------------------------------------------------------------------
+printf '\n%sWhat do you want to do?%s\n\n' "$bold" "$reset"
+printf '  1) Add Windows next to Ollie OS (Windows 10 or 11)\n'
+printf '  2) Fix the Windows boot: "Restart into Windows" and the Windows entry on the start-up menu\n'
+while :; do
+    read -rp "Type 1 or 2: " what || exit 1
+    [[ $what =~ ^[12]$ ]] && break
+    echo "Please type 1 or 2."
+done
+if [[ $what == 2 ]]; then
+    # Fixes what is already here: the newest "Restart into Windows" is put in,
+    # and Windows is put on (or put again on) Ollie OS's start-up menu, looking
+    # for it on this drive and on the computer's other drives. Nothing is
+    # deleted and no part is changed.
+    say "Putting the newest Restart into Windows in"
+    install_files
+    sudo -n systemctl daemon-reload
+    sudo -n systemctl enable ollie-windows-boot.service >/dev/null 2>&1
+    say "Looking for Windows on this computer, and putting it on the start-up menu"
+    if ! sudo -n /usr/local/bin/ollie-windows-boot; then
+        printf '\n%sWindows was not found%s on this computer, so there is nothing to put on the menu.\n' "$red$bold" "$reset"
+        printf 'If Windows is on another drive, plug that drive in (or run this on the computer that has it).\n'
+        printf 'To add a Windows next to Ollie OS, run this again and type 1.\n\nPress Enter to close.'
+        read -r _ || true
+        exit 1
+    fi
+    echo
+    echo "The menu entry:"
+    sed 's/^/    /' /boot/loader/entries/windows.conf 2>/dev/null
+    printf '\n%s  Fixed.%s "Restart into Windows" (apps menu > System) now works, and so does picking\n' "$green$bold" "$reset"
+    printf '  Windows in the start-up menu when the computer starts (4 seconds; the arrow keys stop it).\n\n'
+    read -rp "Try Restart into Windows now? The computer restarts. [y/N] " answer || answer=n
+    if [[ ${answer,,} == y* ]]; then
+        exec /usr/local/bin/ollie-restart-windows
+    fi
+    printf '\nPress Enter to close.'
+    read -r _ || true
+    exit 0
+fi
 
 # --- 1. Windows 10 or 11? -------------------------------------------------------------------
 printf '\n%s1. Which Windows?%s\n\n  1) Windows 10   (no security updates from Microsoft any more)\n  2) Windows 11   (safer; needs about 64 GB of room)\n' "$bold" "$reset"

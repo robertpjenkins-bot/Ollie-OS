@@ -152,13 +152,17 @@ run_updater() {
         -e "s#/boot/EFI/Microsoft#$work/fake/boot/EFI/Microsoft#" \
         -e "s#/boot/ollie-windows-plan#$work/fake/boot/ollie-windows-plan#g" \
         -e "s#/var/lib/ollie#$work/fake/var/lib/ollie#g" \
-        -e "s#/usr/local/bin/ollie-windows-boot#ollie-windows-boot-stub#" \
+        -e "s#/usr/local/bin/ollie-windows-boot#ollie-windows-boot-stub#g" \
+        -e "s#/usr/local/bin/ollie-restart-windows#ollie-restart-windows-stub#g" \
+        -e "s#/boot/loader/entries/windows.conf#$work/fake/boot/loader/entries/windows.conf#g" \
         -e 's|^num="\${src##\*\[!0-9\]}".*|num=2|' \
         "$upd" >"$work/upd.sh"
     chmod +x "$work/upd.sh"
-    printf '#!/bin/sh\necho "ollie-windows-boot ran" >>"%s/boot.log"\n' "$work" >"$work/bin/ollie-windows-boot-stub"
+    printf '#!/bin/sh\n[ -n "$BOOT_FAIL" ] && exit 1\necho "ollie-windows-boot ran" >>"%s/boot.log"\n' "$work" >"$work/bin/ollie-windows-boot-stub"
     chmod +x "$work/bin/ollie-windows-boot-stub"
-    printf '%b' "$1" | WL_BOOT="$work/fake/boot" WL_ETC="$work/fake/etc" HOME="$work/home" PATH="$work/bin:$PATH" OLLIE_WINDOWS_IN_TERMINAL=1 OLLIE_APPS_SHARE="$work/share" timeout 120 "$work/upd.sh" >"$work/upd.out" 2>&1
+    printf '#!/bin/sh\necho "restart app ran" >>"%s/restart.log"\n' "$work" >"$work/bin/ollie-restart-windows-stub"
+    chmod +x "$work/bin/ollie-restart-windows-stub"
+    printf '%b' "${FIRST-1\\n}$1" | WL_BOOT="$work/fake/boot" WL_ETC="$work/fake/etc" HOME="$work/home" PATH="$work/bin:$PATH" OLLIE_WINDOWS_IN_TERMINAL=1 OLLIE_APPS_SHARE="$work/share" timeout 120 "$work/upd.sh" >"$work/upd.out" 2>&1
     return $?
 }
 
@@ -333,6 +337,30 @@ if want download; then
     [[ -s $work/fake/var/lib/ollie/windows-10.iso ]] || bad "the download was not kept"
     grep -q "downloaded from Microsoft now" "$work/upd.out" || bad "the text before the last question does not say it downloads"
     report "no file in Downloads: downloaded from Microsoft"
+fi
+
+# ----- F1. Fix the Windows boot: the newest app goes in, Windows on the menu again -----
+if want fixboot; then
+    world 80 0 "3:60G:$WIN:Basic data partition"
+    before="$(tab)"
+    # option 2 (fix), then "y": try Restart into Windows now
+    FIRST='2\n' run_updater 'y\n' || bad "updater failed ($?)"
+    [[ "$(tab)" == "$before" ]] || bad "the part table changed (fixing must not touch it)"
+    [[ -f $work/boot.log ]] || bad "Windows was not put on the start-up menu"
+    cmp -s "$air/usr/local/bin/ollie-restart-windows" "$work/fake/usr/local/bin/ollie-restart-windows" || bad "the newest Restart into Windows was not put in"
+    [[ -f $work/fake/usr/share/applications/ollie-restart-windows.desktop ]] || bad "the Restart into Windows menu entry was not put in"
+    [[ -f $work/restart.log ]] || bad "it did not try Restart into Windows when asked"
+    grep -q "ollie-windows-boot.service" "$work/systemctl.log" 2>/dev/null || true
+    report "Fix the Windows boot: newest app in, Windows on the menu, nothing in the part table changed"
+fi
+
+# ----- F2. Fix the Windows boot, no Windows found: says so -----
+if want fixnone; then
+    world 80 0
+    # the stand-in for ollie-windows-boot fails, as the real one does when it finds no Windows
+    BOOT_FAIL=1 FIRST='2\n' run_updater '\n' && bad "it said it worked"
+    grep -q "Windows was not found" "$work/upd.out" || bad "it did not say Windows was not found"
+    report "Fix the Windows boot: no Windows found, said so"
 fi
 
 # run_remover "INPUT LINES"

@@ -32,8 +32,11 @@ done
 
 # 2. The computer's own start-up list has Windows Boot Manager.
 if command -v efibootmgr >/dev/null 2>&1 && [[ -d /sys/firmware/efi || -n $dry ]]; then
-    entries="$(sudo -n efibootmgr 2>/dev/null || efibootmgr 2>/dev/null)"
-    num="$(sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? Windows Boot Manager.*/\1/p' <<<"$entries" | head -n 1)"
+    entries="$(sudo -n efibootmgr -v 2>/dev/null || efibootmgr -v 2>/dev/null)"
+    # (Not one that starts Ollie OS's own menu: the Windows installed next to
+    # Ollie OS makes its "Windows Boot Manager" entry do that, so Windows
+    # would not start.)
+    num="$(grep 'Windows Boot Manager' <<<"$entries" | grep -iv 'ollie\|systemd\|shim\|grub' | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)\*\? Windows Boot Manager.*/\1/p' | head -n 1)"
     if [[ -n $num ]]; then
         if [[ -n $dry ]]; then
             say "would run: efibootmgr -n $num, then systemctl reboot"

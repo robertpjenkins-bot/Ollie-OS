@@ -29,7 +29,7 @@ STUB
 cat >"$work/bin/efibootmgr" <<STUB
 #!/bin/bash
 echo "efibootmgr \$*" >>"$work/calls.log"
-[[ \$# -eq 0 ]] && printf '%s' "\${EFI_OUT:-}"
+[[ \$# -eq 0 || \$1 == -v ]] && printf '%s' "\${EFI_OUT:-}"
 exit 0
 STUB
 printf '#!/bin/sh\necho "kdialog $*" >>"%s/calls.log"\n' "$work" >"$work/bin/kdialog"
@@ -57,6 +57,9 @@ run "" "Boot0001* Ollie OS
 Boot0003* Windows Boot Manager	HD(1,GPT)" || bad "it did not restart"
 calls | grep -q "efibootmgr -n 0003" || bad "BootNext was not set to Windows Boot Manager (0003): $(calls | tr '\n' '|')"
 [[ "$(calls | tail -n 1)" == "systemctl reboot" ]] || bad "it did not restart after BootNext"
+echo "== Windows Boot Manager only starts Ollie OS's menu (Windows installed next to Ollie OS): not used"
+run "" "Boot0003* Windows Boot Manager	HD(1,GPT)/File(\\EFI\\ollie\\shimx64.efi)" && bad "it used an entry that starts Ollie OS's menu"
+calls | grep -q "efibootmgr -n" && bad "BootNext was set to an entry that loops back to Ollie OS"
 echo "== nothing knows Windows: a clear message, no restart"
 run "" "Boot0001* Ollie OS" && bad "it said it worked"
 calls | grep -q "^kdialog" || bad "no message was shown"
@@ -64,7 +67,7 @@ calls | grep -q "^systemctl reboot$" && bad "it restarted"
 echo "== --dry-run changes nothing"
 : >"$work/calls.log"; PATH="$work/bin:$PATH" "$work/app.sh" --dry-run >"$work/out.txt" 2>&1
 grep -q "windows.conf" "$work/out.txt" || bad "dry run does not mention windows.conf"
-[[ "$(grep -v '^efibootmgr *$' "$work/calls.log")" == "" ]] || bad "dry run called something: $(calls | tr '\n' '|')" # (listing the start-up entries is allowed)
+[[ "$(grep -v '^efibootmgr *\(-v\)\? *$' "$work/calls.log")" == "" ]] || bad "dry run called something: $(calls | tr '\n' '|')" # (listing the start-up entries is allowed)
 
 echo "== the entry ollie-windows-boot makes has the id the app asks for"
 F="$work/root"
