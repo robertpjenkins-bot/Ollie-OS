@@ -393,7 +393,7 @@ if [[ -n $usb_on ]]; then
         /^Name:/ && tolower($0) ~ /setup/ {setupi = i}
         END {print (setupi ? setupi : (last ? last : 1))}')"
     sed 's/$/\r/' "$usbcmd" >"$tmp/ollie-usb-install.cmd"
-    printf '[LaunchApps]\r\n%%SYSTEMROOT%%\\System32\\cmd.exe, /k %%SYSTEMROOT%%\\System32\\ollie-usb-install.cmd\r\n' >"$tmp/winpeshl.ini"
+    printf '[LaunchApps]\r\n%%SYSTEMDRIVE%%\\Windows\\System32\\cmd.exe, /k %%SYSTEMDRIVE%%\\Windows\\System32\\ollie-usb-install.cmd\r\n' >"$tmp/winpeshl.ini"
     progress 93 "Putting the Windows script into Windows Setup's start-up image"
     wimlib-imagex update "$boot_wim" "$bidx" >/dev/null 2>&1 <<WIMEOF || die "the script could not be put into Windows Setup's start-up image (is the drive full?)."
 add '$tmp/ollie-usb-install.cmd' '/Windows/System32/ollie-usb-install.cmd'

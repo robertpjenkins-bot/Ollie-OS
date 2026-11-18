@@ -126,10 +126,46 @@ if [[ $what == 2 ]]; then
             echo "  The part for Windows is empty: Windows was not put on yet."
         fi
     fi
+    # What is at the top of the part for Windows (names and sizes), and what the script that
+    # puts Windows on wrote on the Windows Setup part: the report to read when Windows is not whole.
+    if [[ -n ${wdev:-} ]] && have ntfsls; then
+        echo
+        echo "  At the top of $wdev:"
+        sudo -n ntfsls -l "$wdev" 2>/dev/null | head -n 15 | sed 's/^/    /'
+        if sudo -n ntfsls "$wdev" 2>/dev/null | grep -Eqx 'ollie-image\.(wim|esd|swm)'; then
+            echo "  The Windows image is still on the part: it was never applied (the install did not run or stopped)."
+        fi
+    fi
+    sdev="$(lsblk -lnpo NAME,PARTLABEL "$disk_fix" 2>/dev/null | awk '$2 == "OLLIE_WINSETUP" {print $1; exit}')"
+    if [[ -n $sdev ]]; then
+        smnt="$(mktemp -d)"
+        if sudo -n mount -o ro "$sdev" "$smnt" 2>/dev/null; then
+            echo
+            echo "  On the Windows Setup part ($sdev):"
+            ls "$smnt" 2>/dev/null | head -n 20 | sed 's/^/    /'
+            for lg in ollie-install.log ollie-dism.log; do
+                [[ -f $smnt/$lg ]] && sudo -n cp -f "$smnt/$lg" "/var/log/ollie-windows-${lg#ollie-}" 2>/dev/null
+            done
+            [[ -f $smnt/ollie-install.log ]] || echo "  There is no ollie-install.log: the Windows install script never started (Windows Setup's start-up image did not run it)."
+            sudo -n umount "$smnt" 2>/dev/null
+        fi
+        rmdir "$smnt" 2>/dev/null
+    fi
     if [[ -f /var/log/ollie-windows-install.log ]]; then
         echo
         echo "  What the Windows install wrote (/var/log/ollie-windows-install.log):"
-        tail -n 15 /var/log/ollie-windows-install.log | sed 's/^/    /'
+        tail -n 25 /var/log/ollie-windows-install.log | sed 's/^/    /'
+    fi
+    if [[ -f /var/log/ollie-windows-dism.log ]]; then
+        echo
+        echo "  The end of DISM's log (/var/log/ollie-windows-dism.log):"
+        grep -Ei 'error|fail|0x8|cannot|could not' /var/log/ollie-windows-dism.log | tail -n 12 | sed 's/^/    /'
+    fi
+    # The computer's own start-up list (what Install Windows and Windows Boot Manager entries exist).
+    if have efibootmgr; then
+        echo
+        echo "  The start-up list:"
+        sudo -n efibootmgr 2>/dev/null | grep -E '^Boot[0-9A-F]{4}' | sed 's/^/    /' | head -n 12
     fi
     say "Looking for Windows on this computer, and putting it on the start-up menu"
     if ! sudo -n /usr/local/bin/ollie-windows-boot; then
