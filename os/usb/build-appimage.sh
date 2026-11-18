@@ -249,7 +249,8 @@ build_add_windows_updater() {
     rm -rf "$appdir"
     install -D -m 0755 "$here/ollie-add-windows" "$appdir/usr/bin/ollie-add-windows"
     for f in usr/local/lib/ollie/windows-plan usr/local/lib/ollie/windows-layout usr/local/lib/ollie/get-windows.py \
-        etc/systemd/system/ollie-windows-plan.service \
+        etc/systemd/system/ollie-windows-plan.service etc/systemd/system/ollie-windows-finish.service \
+        usr/local/bin/ollie-windows-finish \
         usr/local/bin/ollie-windows-setup usr/local/bin/ollie-windows-install \
         usr/local/bin/ollie-windows-boot usr/local/bin/ollie-restart-windows \
         usr/local/share/ollie/ollie-windows-install.desktop usr/local/share/ollie/windows-usb-install.cmd usr/share/applications/ollie-restart-windows.desktop \

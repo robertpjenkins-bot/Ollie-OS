@@ -115,12 +115,13 @@ args=("\$@")
 exec /usr/bin/mount --bind "$work/setupdir" "\${args[\$((\${#args[@]} - 1))]}"
 STUB
     chmod +x "$G/bin"/*
-    sed -e "s#\([ \">=]\)/boot#\1$G/boot#g" -e "s#/etc/ollie/windows#$G/etc/ollie/windows#g" -e "s#/var/log/#$G/var/log/#g" -e "s#/var/lib/ollie/windows-account#$G/var/lib-account#g" "$boot" >"$work/boot2.sh"
+    sed -e "s#\([ \">=]\)/boot#\1$G/boot#g" -e "s#/etc/ollie/windows#$G/etc/ollie/windows#g" -e "s#/var/log/#$G/var/log/#g" -e "s#/var/lib/ollie/windows-account#$G/var/lib-account#g" -e "s#/var/lib/ollie/windows-firstboot#$G/firstboot#g" "$boot" >"$work/boot2.sh"
     chmod +x "$work/boot2.sh"
     PATH="$G/bin:$PATH" "$work/boot2.sh" >"$work/boot2.out" 2>&1 || bad "ollie-windows-boot failed: $(tail -n 3 "$work/boot2.out")"
     [[ -f $G/boot/EFI/Microsoft/Boot/bootmgfw.efi ]] || bad "Windows' start-up files were not copied from the Windows Setup part"
     [[ -f $G/boot/loader/entries/windows.conf ]] || bad "no start-up menu entry for the Windows put on the USB way"
     grep -q "Windows is whole" "$G/var/log/ollie-windows-install.log" 2>/dev/null || bad "the log of the install was not kept"
+    [[ -f $G/firstboot ]] || bad "Windows' first start-up is not followed (the state file for ollie-windows-finish is missing)"
     [[ -f $G/var/log/ollie-windows-dism.log ]] || bad "the DISM log was not kept"
     grep -q '^title *Windows 10' "$G/boot/loader/entries/windows.conf" || bad "the entry is not called Windows 10"
     # not yet installed (no note from the script): nothing is copied

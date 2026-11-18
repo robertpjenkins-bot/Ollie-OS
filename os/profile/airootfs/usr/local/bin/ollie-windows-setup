@@ -274,7 +274,9 @@ fi
 menu='\EFI\systemd\systemd-bootx64.efi'
 [[ -f ${root%/}/boot/EFI/ollie/shimx64.efi ]] && menu='\EFI\ollie\shimx64.efi'
 if [[ -n $usb_on ]]; then
-    sc_boot="rem Ollie OS (USB way): Windows start-up files are on Ollie OS start-up part already."
+    sc_boot="rem Ollie OS (USB way): Windows start-up files are on Ollie OS start-up part already.
+rem Windows is set up: Ollie OS stops restarting into it (ollie-windows-finish).
+echo done>%SystemDrive%\\ollie-windows-ready.txt"
 else
     sc_boot="rem Ollie OS: Windows Boot Manager starts Ollie OS's start-up menu (both are on it).
 bcdedit /set {bootmgr} path $menu"

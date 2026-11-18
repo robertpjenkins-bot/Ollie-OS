@@ -188,6 +188,7 @@ L="$(losetup -f --show "$work/part.img")"
 if OLLIE_WINDOWS_ACCOUNT="$work/account" OLLIE_WINDOWS_USB_CMD="$here/../profile/airootfs/usr/local/share/ollie/windows-usb-install.cmd" PATH="$work/stub:$PATH" "$setup" --version 10 --iso "$work/tree" --part "$L" --no-label-check --no-efi-vars --usb yes --windows-part "$L3" --root "$work/root" --work "$work" >"$work/out.txt" 2>&1; then say "  ok: ran"; else say "  FAIL: ran ($(tail -n 2 "$work/out.txt" | tr '\n' ' '))"; fail=1; fi
 mounted
 check "the answer file for the script is there" test -f "$work/m/ollie-unattend.xml"
+check "the first-start script tells Ollie OS when Windows is set up (ollie-windows-ready.txt)" grep -q 'ollie-windows-ready.txt' "$work/m/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd"
 check "the first-start script has no start-up-path change (the files are already on Ollie OS's part)" bash -c "! grep -q 'bcdedit' '$work/m/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd' && grep -q RealTimeIsUniversal '$work/m/sources/\$OEM\$/\$\$/Setup/Scripts/SetupComplete.cmd'"
 check "it is well-formed and makes the account" bash -c "python3 -c \"import sys,xml.dom.minidom as m; m.parse(sys.argv[1])\" '$work/m/ollie-unattend.xml' && grep -q '<Name>Bobby Bro</Name>' '$work/m/ollie-unattend.xml'"
 check "no autounattend.xml at Setup's root (Setup is not run)" test ! -e "$work/m/autounattend.xml"

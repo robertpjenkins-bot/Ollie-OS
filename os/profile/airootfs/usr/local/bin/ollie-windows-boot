@@ -74,6 +74,11 @@ if [[ -z $found ]]; then
             if cp -r "$sm/EFI/Microsoft" /boot/EFI/Microsoft.new; then
                 rm -rf /boot/EFI/Microsoft
                 mv /boot/EFI/Microsoft.new /boot/EFI/Microsoft && found="$boot"
+                # Windows has still to set itself up (it restarts a few times): ollie-windows-finish
+                # takes the computer straight back into Windows each time, until Windows says it is done.
+                if grep -q '^USB=1' /etc/ollie/windows 2>/dev/null; then
+                    install -D -m 0644 /dev/null /var/lib/ollie/windows-firstboot && echo 0 >/var/lib/ollie/windows-firstboot
+                fi
             else
                 rm -rf /boot/EFI/Microsoft.new
                 mountpoint -q "$tmp" && umount "$tmp"

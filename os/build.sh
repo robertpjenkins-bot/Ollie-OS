@@ -145,6 +145,7 @@ file_permissions=(
   ["/usr/local/lib/ollie/loop-root"]="0:0:755"
   ["/usr/local/lib/ollie/copy-boot-files"]="0:0:755"
   ["/usr/local/bin/ollie-windows-boot"]="0:0:755"
+  ["/usr/local/bin/ollie-windows-finish"]="0:0:755"
   ["/usr/local/bin/ollie-windows-setup"]="0:0:755"
   ["/usr/local/bin/ollie-windows-install"]="0:0:755"
   ["/usr/local/lib/ollie/get-windows.py"]="0:0:755"

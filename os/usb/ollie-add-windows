@@ -575,6 +575,7 @@ fi
 say "Adding Install Windows to Ollie OS"
 install_files
 sudo -n systemctl daemon-reload
+sudo -n systemctl enable ollie-windows-finish.service >/dev/null 2>&1
 sudo -n systemctl enable ollie-windows-plan.service >/dev/null 2>&1 ||
     die "Ollie OS could not be told to make the room at the next start."
 
@@ -599,10 +600,11 @@ cat <<EOF2
    - on that start Ollie OS makes the room and gets Windows ready, then restarts
      into a blue screen that says Ollie OS is putting Windows on this drive: it
      takes several minutes, so wait. There is nothing to click.
-   - then the computer restarts into Ollie OS, and Windows $VERSION is on the
-     start-up menu next to it. The first time you pick Windows, it finishes
-     setting itself up with no questions (a few more minutes), then shows its
-     login screen: the user is "$wuser", and it asks for the password you typed.
+   - then the computer restarts into Ollie OS, which is on for a few seconds and
+     restarts straight into Windows: it finishes setting itself up with no
+     questions (a few more minutes, it restarts a few times by itself), then
+     shows its login screen: the user is "$wuser", and it asks for the password
+     you typed. After that Windows is on the start-up menu next to Ollie OS.
    (If something goes wrong, the blue or red screen says what.)
 
 EOF2
