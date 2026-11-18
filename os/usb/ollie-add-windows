@@ -85,6 +85,21 @@ install_files() { # what Ollie OS needs for Windows, from inside this app
     return 0
 }
 
+# Do now what the next start would do: make the room (ollie-windows-plan), then open Install Windows
+# (a progress window; it restarts the computer into the Windows install by itself at the end).
+# Comes back (returns 1) if the room could not be made now.
+go_on_now() {
+    say "Making the room for Windows now (about a minute)"
+    sudo -n systemctl daemon-reload
+    sudo -n systemctl start ollie-windows-plan.service
+    if [[ -e /boot/ollie-windows-plan ]]; then
+        printf '  The room could not be made now (see: journalctl -u ollie-windows-plan).\n'
+        return 1
+    fi
+    say "Putting Windows on: a progress window opens, and the computer restarts by itself at the end"
+    exec /usr/local/bin/ollie-windows-install --at-login
+}
+
 # --- What to do? ----------------------------------------------------------------------------
 printf '\n%sWhat do you want to do?%s\n\n' "$bold" "$reset"
 printf '  1) Add Windows next to Ollie OS (Windows 10 or 11)\n'
@@ -192,6 +207,34 @@ if [[ $what == 2 ]]; then
     printf '\nPress Enter to close.'
     read -r _ || true
     exit 0
+fi
+
+# --- A plan from an earlier run that has not run yet ---------------------------------------------
+if [[ -e /boot/ollie-windows-plan ]]; then
+    printf '\n%sA plan from an earlier run is still waiting%s (it should have run when the computer started):\n' "$red$bold" "$reset"
+    sed 's/^/    /' /boot/ollie-windows-plan 2>/dev/null
+    printf '  Why it did not run (the start-up step):\n'
+    printf '    enabled: %s\n' "$(systemctl is-enabled ollie-windows-plan.service 2>&1 | head -n 1)"
+    journalctl -u ollie-windows-plan -b --no-pager -n 6 2>/dev/null | sed 's/^/    /'
+    printf '\n  1) Start over: throw the old plan away and ask the questions again\n'
+    printf '  2) Run the old plan now (the room is made now, no restart needed)\n'
+    printf '  3) Stop\n'
+    while :; do
+        read -rp "Type 1, 2 or 3: " pl || exit 1
+        [[ $pl =~ ^[123]$ ]] && break
+        echo "Please type 1, 2 or 3."
+    done
+    case "$pl" in
+    3) printf '\nOK, nothing was changed.\n'; exit 0 ;;
+    2)
+        install_files
+        go_on_now || die "the old plan could not be run now. Restart the computer to run it."
+        ;;
+    1)
+        sudo -n rm -f /boot/ollie-windows-plan
+        echo "The old plan is thrown away."
+        ;;
+    esac
 fi
 
 # --- 1. Windows 10 or 11? -------------------------------------------------------------------
@@ -411,7 +454,7 @@ fi
 # enough (Ollie OS's part is not touched), else by making Ollie OS's part
 # smaller; parts after it are never touched.
 if [[ -e /boot/ollie-windows-plan ]]; then
-    die "Windows is already waiting for the next start. Restart the computer."
+    die "an old plan is still waiting (it was left while you answered): run this again."
 fi
 read -r rstart _ <<<"$(as_root wl_part_info "$disk" "$num")"
 ss="$(as_root wl__ss "$disk")"
@@ -663,6 +706,7 @@ cat <<EOF2
 
 EOF2
 fi
+go_on_now # (comes back only if the room could not be made now: then the restart does it)
 delay="${OLLIE_RESTART_DELAY:-15}"
 printf '  Restarting in %s seconds. (Press Ctrl+C to restart later yourself.)\n' "$delay"
 for ((i = delay; i > 0; i--)); do

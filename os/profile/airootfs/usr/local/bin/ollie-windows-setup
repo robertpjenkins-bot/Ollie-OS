@@ -344,7 +344,9 @@ if [[ -n $usb_on ]]; then
     progress 92 "Making the part for Windows (NTFS)"
     umount "$wpart" 2>/dev/null
     # A Windows already on it (put on by an earlier run) is never formatted over.
-    if command -v ntfsls >/dev/null && ntfsls "$wpart" 2>/dev/null | grep -qx Windows; then
+    # (Only a whole one: what an interrupted try left, with Windows' folders but not its files, is just rubbish.)
+    if command -v ntfsls >/dev/null && ntfsls -p /Windows/System32 "$wpart" 2>/dev/null | grep -qix ntoskrnl.exe &&
+        ntfsls -p /Windows/System32 "$wpart" 2>/dev/null | grep -qix winload.efi; then
         die "there is already a Windows on the part for Windows ($wpart). Choose \"Replace it\" in the Add Windows Updater to erase it first."
     fi
     mkfs.ntfs -Q -F -L Windows "$wpart" >/dev/null 2>&1 || die "the part for Windows could not be formatted (NTFS)."

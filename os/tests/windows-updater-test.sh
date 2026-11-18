@@ -86,7 +86,7 @@ rm) shift; args=(); for a in "\$@"; do case "\$a" in /*) args+=("\$(map "\$a")")
 cp) shift 3; mkdir -p "\$(dirname "\$(map "\$2")")"; exec cp "\$1" "\$(map "\$2")" ;;
 mv) shift; exec mv "\$(map "\$1")" "\$(map "\$2")" ;;
 curl) shift; while [[ \$1 != -o ]]; do shift; done; echo "curl \$*" >>"$work/curl.log"; mkdir -p "\$(dirname "\$(map "\$2")")"; truncate -s 3G "\$(map "\$2")" ;;
-systemctl) echo "\$*" >>"$work/sudo-systemctl.log"; exit 0 ;;
+systemctl) echo "\$*" >>"$work/sudo-systemctl.log"; [[ "\$2" == start && -n \${START_REMOVES_PLAN:-} ]] && rm -f "$work/fake/boot/ollie-windows-plan"; exit 0 ;;
 pacman | sync | umount) exit 0 ;;
 efibootmgr) cat "$work/efibootmgr.out" 2>/dev/null ;;
 /usr/local/bin/ollie-windows-boot) echo "ollie-windows-boot ran" >>"$work/boot.log" ;;
@@ -155,7 +155,7 @@ STUB
 echo "https://example.invalid/windows.iso"
 STUB
     chmod +x "$b"/*
-    rm -f "$work/curl.log" "$work/boot.log" "$work/efibootmgr.out" "$work/setup.log" "$work/systemctl.log" "$work/sudo-systemctl.log"
+    rm -f "$work/curl.log" "$work/boot.log" "$work/efibootmgr.out" "$work/setup.log" "$work/systemctl.log" "$work/sudo-systemctl.log" "$work/install.log"
 }
 
 # run_updater "INPUT LINES"
@@ -168,12 +168,15 @@ run_updater() {
         -e "s#/var/lib/ollie#$work/fake/var/lib/ollie#g" \
         -e "s#/usr/local/bin/ollie-windows-boot#ollie-windows-boot-stub#g" \
         -e "s#/usr/local/bin/ollie-restart-windows#ollie-restart-windows-stub#g" \
+        -e "s#/usr/local/bin/ollie-windows-install#ollie-windows-install-stub#g" \
         -e "s#/boot/loader/entries/windows.conf#$work/fake/boot/loader/entries/windows.conf#g" \
         -e 's|^num="\${src##\*\[!0-9\]}".*|num=2|' \
         "$upd" >"$work/upd.sh"
     chmod +x "$work/upd.sh"
     printf '#!/bin/sh\n[ -n "$BOOT_FAIL" ] && exit 1\necho "ollie-windows-boot ran" >>"%s/boot.log"\n' "$work" >"$work/bin/ollie-windows-boot-stub"
     chmod +x "$work/bin/ollie-windows-boot-stub"
+    printf '#!/bin/sh\necho "install windows ran $*" >>"%s/install.log"\n' "$work" >"$work/bin/ollie-windows-install-stub"
+    chmod +x "$work/bin/ollie-windows-install-stub"
     printf '#!/bin/sh\necho "restart app ran" >>"%s/restart.log"\n' "$work" >"$work/bin/ollie-restart-windows-stub"
     chmod +x "$work/bin/ollie-restart-windows-stub"
     local accenv=(OLLIE_WINDOWS_USER=Tester OLLIE_WINDOWS_PASSWORD=tester123)
@@ -288,6 +291,39 @@ if want account; then
     grep -rq 'secret[123]' "$work/upd.out" "$acct" "$work/fake/boot/ollie-windows-plan" 2>/dev/null && bad "a password is shown or stored in plain text"
     grep -q 'Bobby Bro' "$work/upd.out" || bad "the confirm text does not name the account"
     report "Account: bad names turned away, passwords must match, stored scrambled, never shown"
+fi
+
+# ----- P1. A plan from an earlier run that never ran: start over / run it now / stop -----
+if want pendingplan; then
+    world 100 150
+    truncate -s 3500M "$work/home/Downloads/Win10_22H2_English_x64v1.iso"
+    printf 'MENU=1\nVERSION=10\nGB=40\nAUTO=1\n' >"$work/fake/boot/ollie-windows-plan"
+    before="$(tab)"
+    run_updater '3\n' || true
+    [[ -f $work/fake/boot/ollie-windows-plan ]] || bad "Stop threw the old plan away"
+    grep -q "still waiting" "$work/upd.out" || bad "it did not say the plan was still waiting"
+    grep -q "GB=40" "$work/upd.out" || bad "it did not show the old plan"
+    [[ "$(tab)" == "$before" ]] || bad "Stop changed the part table"
+    # start over: the old plan goes and the questions go on (Windows 10, regular, Enter, drive, 40 GB, yes)
+    run_updater '1\n1\n1\n\n1\n40\nyes\n\n' || bad "updater failed ($?)"
+    grep -q "old plan is thrown away" "$work/upd.out" || bad "it did not throw the old plan away"
+    grep -q '^GB=40' "$work/fake/boot/ollie-windows-plan" 2>/dev/null || bad "the new plan was not made"
+    # run it now, but the room cannot be made now (the plan stays): it says so and does not go on
+    run_updater '2\n' && bad "it went on although the room could not be made"
+    grep -q "could not be run now" "$work/upd.out" || bad "no word that the old plan could not be run"
+    report "A plan that never ran: shown with why, start over / run now / stop"
+fi
+
+# ----- P2. The room is made now (no restart needed), then Install Windows opens -----
+if want runnow; then
+    world 100 150
+    truncate -s 3500M "$work/home/Downloads/Win10_22H2_English_x64v1.iso"
+    START_REMOVES_PLAN=1 run_updater '1\n1\n\n1\n40\nyes\n\n' || bad "updater failed ($?)"
+    grep -q "^systemctl start ollie-windows-plan.service" "$work/sudo-systemctl.log" 2>/dev/null || bad "the room was not made now"
+    grep -q "install windows ran --at-login" "$work/install.log" 2>/dev/null || bad "Install Windows did not open: $(cat "$work/install.log" 2>/dev/null)"
+    grep -q '^systemctl reboot' "$work/sudo-systemctl.log" 2>/dev/null && bad "it restarted the computer although the room was made now"
+    grep -qi "Restarting in" "$work/upd.out" && bad "it still counted down to a restart"
+    report "Run now: the room is made now and Install Windows opens, no restart for it"
 fi
 
 # ----- 1b. putting Windows Setup on the drive fails: no restart, Install Windows at login -----

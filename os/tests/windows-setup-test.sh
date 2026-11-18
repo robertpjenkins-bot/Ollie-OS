@@ -130,17 +130,31 @@ check "the start-up image is whole" bash -c "wimlib-imagex verify '$work/m/sourc
 umount "$work/m"
 check "it is noted that the drive is USB" grep -q '^USB=1' "$work/root/etc/ollie/windows"
 
-say "== a Windows already on the part for Windows is never formatted over"
-make_iso || exit 1
-echo hi >"$work/winfile"
-ntfscp -f "$L3" "$work/winfile" Windows >/dev/null 2>&1
-rm -f "$work/part.img"; truncate -s 12G "$work/part.img"
-[[ -n $L ]] && losetup -d "$L" 2>/dev/null
-L="$(losetup -f --show "$work/part.img")"
-if OLLIE_WINDOWS_USB_CMD="$here/../profile/airootfs/usr/local/share/ollie/windows-usb-install.cmd" PATH="$work/stub:$PATH" "$setup" --version 10 --iso "$work/tree" --part "$L" --no-label-check --no-efi-vars --usb yes --windows-part "$L3" --root "$work/root" --work "$work" >"$work/out.txt" 2>&1; then say "  FAIL: it formatted over a Windows"; fail=1; else
+say "== a whole Windows already on the part for Windows is never formatted over; an interrupted try is"
+mkdir -p "$work/stub2"
+cat >"$work/stub2/ntfsls" <<STUB
+#!/bin/bash
+# a stand-in for what is on the part: WIN_WHOLE=1 a whole Windows, else only its folders
+case "\$*" in
+*"-p /Windows/System32"*) [[ -n \${WIN_WHOLE:-} ]] && printf '%s\\n' ntoskrnl.exe winload.efi smss.exe ;;
+*) exec /usr/bin/ntfsls "\$@" ;;
+esac
+STUB
+chmod +x "$work/stub2/ntfsls"
+usb_run() { # usb_run [ENV=VALUE...]
+    make_iso || exit 1
+    rm -f "$work/ntfs.img"; truncate -s 3G "$work/ntfs.img"; L3="$(losetup -f --show "$work/ntfs.img")"
+    rm -f "$work/part.img"; truncate -s 12G "$work/part.img"
+    [[ -n $L ]] && losetup -d "$L" 2>/dev/null
+    L="$(losetup -f --show "$work/part.img")"
+    env "$@" OLLIE_WINDOWS_USB_CMD="$here/../profile/airootfs/usr/local/share/ollie/windows-usb-install.cmd" PATH="$work/stub2:$work/stub:$PATH" "$setup" --version 10 --iso "$work/tree" --part "$L" --no-label-check --no-efi-vars --usb yes --windows-part "$L3" --root "$work/root" --work "$work" >"$work/out.txt" 2>&1
+}
+if usb_run WIN_WHOLE=1; then say "  FAIL: it formatted over a whole Windows"; fail=1; else
     grep -q "already a Windows" "$work/out.txt" && say "  ok: turned away" || { say "  FAIL: stopped, but not for that: $(tail -n 2 "$work/out.txt" | tr '\n' ' ')"; fail=1; }
-    check "the Windows file is still there" bash -c "ntfsls '$L3' | grep -qx Windows"
 fi
+losetup -d "$L3" 2>/dev/null
+if usb_run A=1; then say "  ok: an interrupted try (folders, no files) is formatted over"; else say "  FAIL: an interrupted try blocked it: $(tail -n 2 "$work/out.txt" | tr '\n' ' ')"; fail=1; fi
+check "the part for Windows has the marker again" bash -c "ntfsls '$L3' | grep -qx OLLIE-WINDOWS-TARGET"
 losetup -d "$L3" 2>/dev/null
 
 say "== not USB: no script goes in, Setup runs as always"
