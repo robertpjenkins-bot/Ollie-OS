@@ -104,6 +104,7 @@ for a in "\$@"; do case "\$a" in /dev/ollietest0) img="$work/disk.img" dev=/dev/
 case "\$*" in
 *PKNAME*) echo ollietest0 ;;
 *TRAN*) [[ -n \${USB_DRIVE:-} ]] && echo usb ;;
+*NAME,PARTLABEL*) [[ -n \${WINPART:-} ]] && echo "/dev/ollietest0p9 OLLIE_WINDOWS" ;;
 *PTTYPE*) echo gpt ;;
 *NAME,SIZE,TYPE,MODEL*) echo "/dev/ollietest0 500G disk Test drive"; [[ -f "$work/disk2.img" ]] && echo "/dev/ollietest1 200G disk Other drive" ;;
 *PARTTYPE*) # the parts, from the image
@@ -121,6 +122,16 @@ STUB
 # "resize max": the file system fills its part (what the kernel would show as the device size)
 sz=\$(sfdisk -d "$work/disk.img" | sed -n 's/^.*disk.img2 : start= *[0-9]*, size= *\([0-9]*\),.*/\1/p')
 btrfs filesystem resize \$((sz * 512)) "$work/mnt" >/dev/null
+STUB
+    cat >"$b/ntfsls" <<STUB
+#!/bin/bash
+# stand-in: the files on the part for Windows. WIN_FILES = the names in /Windows/System32 (or "none" for an empty part)
+case "\$*" in
+*"-p /Windows/System32/config"*) printf '%s\\n' SYSTEM SOFTWARE SAM ;;
+*"-p /Windows/System32"*) printf '%s\\n' \${WIN_FILES:-winload.efi ntoskrnl.exe smss.exe winlogon.exe ntdll.dll} ;;
+*"-p /Windows"*) printf '%s\\n' explorer.exe ;;
+*) [[ \${WIN_FILES:-} == none ]] || echo Windows ;;
+esac
 STUB
     printf '#!/bin/sh\nexit 0\n' >"$b/partx"
     printf '#!/bin/sh\nexit 0\n' >"$b/resizepart"
@@ -460,6 +471,19 @@ if want fixboot; then
     [[ -f $work/restart.log ]] || bad "it did not try Restart into Windows when asked"
     grep -q "ollie-windows-boot.service" "$work/systemctl.log" 2>/dev/null || true
     report "Fix the Windows boot: newest app in, Windows on the menu, nothing in the part table changed"
+fi
+
+# ----- F3. Fix the Windows boot says whether the Windows on the drive is whole -----
+if want fixwhole; then
+    world 80 0
+    WINPART=1 FIRST='2\n' run_updater 'n\n' || bad "updater failed ($?)"
+    grep -q "Windows is whole" "$work/upd.out" || bad "it did not say Windows is whole: $(grep -A2 Checking "$work/upd.out")"
+    WINPART=1 WIN_FILES="winload.efi smss.exe" FIRST='2\n' run_updater 'n\n' || true
+    grep -q "only partly copied" "$work/upd.out" || bad "it did not say Windows was only partly copied"
+    grep -q "ntoskrnl.exe" "$work/upd.out" || bad "it did not name a missing file"
+    WINPART=1 WIN_FILES=none FIRST='2\n' run_updater 'n\n' || true
+    grep -q "part for Windows is empty" "$work/upd.out" || bad "it did not say the part is empty"
+    report "Fix the Windows boot: says whether Windows on the drive is whole, partly copied or not there"
 fi
 
 # ----- F2. Fix the Windows boot, no Windows found: says so -----

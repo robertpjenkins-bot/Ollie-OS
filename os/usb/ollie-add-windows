@@ -103,6 +103,34 @@ if [[ $what == 2 ]]; then
     install_files
     sudo -n systemctl daemon-reload
     sudo -n systemctl enable ollie-windows-boot.service >/dev/null 2>&1
+    # Is the Windows on this drive whole? (The part Ollie OS made for it: OLLIE_WINDOWS.)
+    src_fix="$(findmnt -no SOURCE / | sed 's/\[.*//')"
+    disk_fix="/dev/$(lsblk -no PKNAME "$src_fix" 2>/dev/null | head -n 1)"
+    wdev="$(lsblk -lnpo NAME,PARTLABEL "$disk_fix" 2>/dev/null | awk '$2 == "OLLIE_WINDOWS" {print $1; exit}')"
+    if [[ -n $wdev ]] && have ntfsls; then
+        say "Checking the Windows on $wdev"
+        miss=()
+        for f in winload.efi ntoskrnl.exe smss.exe winlogon.exe ntdll.dll; do
+            sudo -n ntfsls -p /Windows/System32 "$wdev" 2>/dev/null | grep -qix "$f" || miss+=("$f")
+        done
+        sudo -n ntfsls -p /Windows "$wdev" 2>/dev/null | grep -qix explorer.exe || miss+=("explorer.exe")
+        for f in SYSTEM SOFTWARE SAM; do
+            sudo -n ntfsls -p /Windows/System32/config "$wdev" 2>/dev/null | grep -qx "$f" || miss+=("config/$f")
+        done
+        if ((${#miss[@]} == 0)); then
+            echo "  Windows is whole: all the files it cannot start without are there."
+        elif sudo -n ntfsls "$wdev" 2>/dev/null | grep -qx Windows; then
+            printf '  %sWindows was only partly copied%s: missing %s\n' "$red$bold" "$reset" "${miss[*]}"
+            echo "  Run this again and choose 1 (add Windows), then Replace it, to put it on again."
+        else
+            echo "  The part for Windows is empty: Windows was not put on yet."
+        fi
+    fi
+    if [[ -f /var/log/ollie-windows-install.log ]]; then
+        echo
+        echo "  What the Windows install wrote (/var/log/ollie-windows-install.log):"
+        tail -n 15 /var/log/ollie-windows-install.log | sed 's/^/    /'
+    fi
     say "Looking for Windows on this computer, and putting it on the start-up menu"
     if ! sudo -n /usr/local/bin/ollie-windows-boot; then
         printf '\n%sWindows was not found%s on this computer, so there is nothing to put on the menu.\n' "$red$bold" "$reset"
@@ -232,6 +260,14 @@ done
 IFS='|' read -r chosen _ <<<"${drives[pick - 1]}"
 if [[ $chosen != "$disk" ]]; then
     die "Ollie OS is running from $disk, not $chosen. Windows can only be added to the drive Ollie OS is running from. Start the computer from the Ollie OS drive you want (hold F12 / Option / Volume Down), then run $TITLE again."
+fi
+
+# A drive connected by USB: Windows Setup refuses it, so Windows goes on the
+# Ollie OS way (the Windows image is kept whole on the Windows part while it is applied): that part needs 40 GB at least.
+usbdrive=""
+if [[ "$(lsblk -dno TRAN "$disk" 2>/dev/null | head -n 1)" == usb ]]; then
+    usbdrive=1
+    ((MIN_GB < 40)) && MIN_GB=40
 fi
 
 # --- Windows already on this drive? -----------------------------------------------------------
@@ -421,9 +457,8 @@ else
     getline="Windows $VERSION is downloaded from Microsoft now (about 6 GB; it needs the internet and takes a while)."
     ask="Download Windows $VERSION and make room for it? Type yes: "
 fi
-usbline="" usbdrive=""
-if [[ "$(lsblk -dno TRAN "$disk" 2>/dev/null | head -n 1)" == usb ]]; then
-    usbdrive=1
+usbline=""
+if [[ -n $usbdrive ]]; then
     usbline="  - $disk is connected by USB. Windows Setup refuses USB drives, so Ollie OS puts Windows
     on it another way: it skips Windows Setup (and its checks) and puts Windows on the
     drive itself. Windows may not start from a USB drive on every computer."

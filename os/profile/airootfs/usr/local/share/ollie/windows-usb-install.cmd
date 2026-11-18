@@ -33,29 +33,60 @@ ping -n 3 127.0.0.1 >nul
 goto find
 
 :found
+set LOG=%S%\ollie-install.log
+>>%LOG% echo [%date% %time%] Windows goes on %T% (Windows files on %S%)
 echo   Windows goes on %T%   (Windows files are on %S%)
 set IDX=1
 if exist %S%\ollie-image-index.txt for /f "usebackq delims=" %%I in ("%S%\ollie-image-index.txt") do set IDX=%%I
 echo   Edition number: %IDX%
 echo.
-if exist %S%\sources\install.swm goto swm
-if exist %S%\sources\install.esd goto esd
-if exist %S%\sources\install.wim goto wim
+:apply_which
+rem The image is on the part Windows goes on (Ollie OS put it there: no 4 GB limit of the Setup part).
+if exist %T%\ollie-image.swm goto swm
+if exist %T%\ollie-image.esd goto esd
+if exist %T%\ollie-image.wim goto wim
+rem (or, from an older Ollie OS, on the Windows Setup part)
+if exist %S%\sources\install.swm goto oldswm
+if exist %S%\sources\install.esd goto oldesd
+if exist %S%\sources\install.wim goto oldwim
 goto noimage
 
 :swm
-dism /apply-image /imagefile:%S%\sources\install.swm /swmfile:%S%\sources\install*.swm /index:%IDX% /applydir:%T%\
-goto applied
+set DISMARGS=/imagefile:%T%\ollie-image.swm /swmfile:%T%\ollie-image*.swm
+goto apply
 :esd
-dism /apply-image /imagefile:%S%\sources\install.esd /index:%IDX% /applydir:%T%\
-goto applied
+set DISMARGS=/imagefile:%T%\ollie-image.esd
+goto apply
 :wim
-dism /apply-image /imagefile:%S%\sources\install.wim /index:%IDX% /applydir:%T%\
-goto applied
+set DISMARGS=/imagefile:%T%\ollie-image.wim
+goto apply
+:oldswm
+set DISMARGS=/imagefile:%S%\sources\install.swm /swmfile:%S%\sources\install*.swm
+goto apply
+:oldesd
+set DISMARGS=/imagefile:%S%\sources\install.esd
+goto apply
+:oldwim
+set DISMARGS=/imagefile:%S%\sources\install.wim
+goto apply
 
+:apply
+rem DISM's scratch folder goes on the target drive: WinPE's own (a small RAM disk) is too small for a whole Windows.
+mkdir %T%\ollie-scratch >nul 2>&1
+>>%LOG% echo [%time%] dism apply-image %DISMARGS% index %IDX%
+dism /apply-image %DISMARGS% /index:%IDX% /applydir:%T%\ /verify /scratchdir:%T%\ollie-scratch /logpath:%S%\ollie-dism.log
+set DISMRC=%errorlevel%
+>>%LOG% echo [%time%] dism finished with code %DISMRC%
+rmdir /s /q %T%\ollie-scratch >nul 2>&1
+if not %DISMRC%==0 goto failed
+rem The image has done its job: it is not kept on the Windows part.
+del /f /q %T%\ollie-image.wim %T%\ollie-image.esd %T%\ollie-image*.swm >nul 2>&1
 :applied
-if errorlevel 1 goto failed
-if not exist %T%\Windows\System32\winload.efi goto failed
+rem Whole? The files Windows cannot start without.
+set MISSING=
+for %%F in (Windows\System32\winload.efi Windows\System32\ntoskrnl.exe Windows\System32\config\SYSTEM Windows\System32\config\SOFTWARE Windows\System32\config\SAM Windows\System32\smss.exe Windows\System32\winlogon.exe Windows\System32\ntdll.dll Windows\explorer.exe) do if not exist %T%\%%F set MISSING=%%F
+if defined MISSING goto partial
+>>%LOG% echo [%time%] Windows is whole
 if not exist %S%\ollie-unattend.xml goto nounattend
 echo   Setting Windows up with the account you asked for...
 mkdir %T%\Windows\Panther\Unattend >nul 2>&1
@@ -70,8 +101,9 @@ copy /y "%S%\sources\$OEM$\$$\Setup\Scripts\SetupComplete.cmd" %T%\Windows\Setup
 :nosetupcomplete
 echo.
 echo   Making Windows start...
-bcdboot %T%\Windows /s %S% /f UEFI
+bcdboot %T%\Windows /s %S% /f UEFI >>%LOG% 2>&1
 if errorlevel 1 goto failed
+>>%LOG% echo [%time%] bcdboot done
 echo done>%S%\ollie-windows-installed.txt
 echo.
 echo   Windows is on the drive. The computer restarts into Ollie OS now.
@@ -90,10 +122,20 @@ color 4F
 echo.
 echo   There is no Windows image (install.wim) on the Windows Setup part.
 goto stop
+:partial
+color 4F
+>>%LOG% echo [%time%] Windows is NOT whole: %MISSING% is missing
+echo.
+echo   Windows was only partly copied to the drive: %MISSING% is missing.
+echo   (The part for Windows may be too small, or the copy was cut short.)
+echo   Turn the computer off, start Ollie OS and run the Add Windows Updater again.
+goto stop
 :failed
 color 4F
+>>%LOG% echo [%time%] failed
 echo.
 echo   Putting Windows on the drive did not work (see above).
+echo   What happened is written in ollie-install.log and ollie-dism.log on the Windows Setup part.
 echo   Turn the computer off, start Ollie OS and run the Add Windows Updater again.
 :stop
 echo.

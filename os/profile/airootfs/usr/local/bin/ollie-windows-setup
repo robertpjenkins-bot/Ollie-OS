@@ -126,19 +126,34 @@ for f in "$src"/sources/boot.wim "$image"; do
         die "$(basename "$f") in the Windows file is damaged (a download that did not finish, or a bad copy). Download it again, or pick another file."
 done
 
+# --- The way Windows goes on: Windows Setup, or (a drive connected by USB, which Setup refuses) ---
+# Ollie OS's own way: the Windows image then goes on the NTFS part for Windows itself (no 4 GB
+# limit, nothing split or converted), and the Windows Setup part only starts the script that applies it.
+usb_on=""
+if [[ $usb == yes ]]; then
+    usb_on=1
+elif [[ $usb == auto && -n $efi_vars ]]; then
+    d="$(lsblk -no PKNAME "$part" 2>/dev/null | head -n 1)"
+    [[ -n $d && "$(lsblk -dno TRAN "/dev/$d" 2>/dev/null | head -n 1)" == usb ]] && usb_on=1
+fi
+
 # --- Onto the Windows Setup part (FAT32, which every computer can start from) --------------------
 progress 72 "Putting Windows Setup on the drive"
 umount "$part" 2>/dev/null
 mkfs.fat -F 32 -n WINSETUP "$part" >/dev/null || die "the Windows Setup part could not be formatted."
 mount "$part" "$tmp/setup" || die "the Windows Setup part could not be opened."
 # Everything but the Windows image itself (a FAT32 file can be at most 4 GB).
-(cd "$src" && find . -type f ! -path ./sources/install.wim ! -path ./sources/install.esd -print0) |
+skip=()
+[[ -n $usb_on ]] && skip=(! -path './sources/install*.swm') # (the USB way: the image does not go on this part)
+(cd "$src" && find . -type f ! -path ./sources/install.wim ! -path ./sources/install.esd "${skip[@]}" -print0) |
     while IFS= read -r -d '' f; do
         install -D -m 0644 "$src/$f" "$tmp/setup/$f" || exit 1
     done || die "copying Windows Setup failed (is the drive full?)."
 progress 80 "Putting Windows on the drive"
 size="$(stat -c %s "$image")"
-if [[ $image == *.swm ]]; then
+if [[ -n $usb_on ]]; then
+    : # the image goes on the NTFS part for Windows, below
+elif [[ $image == *.swm ]]; then
     cp "$src"/sources/install*.swm "$tmp/setup/sources/" || die "copying Windows failed."
 elif ((size < 4 * 1024 * 1024 * 1024 - 1)); then
     cp "$image" "$tmp/setup/sources/" || die "copying Windows failed."
@@ -249,13 +264,6 @@ XML
 # Where it goes depends on the way Windows is put on: with Windows Setup
 # (autounattend.xml, at the root of the Windows Setup part), or the USB way
 # (ollie-unattend.xml, which the script copies into Windows; see below).
-usb_on=""
-if [[ $usb == yes ]]; then
-    usb_on=1
-elif [[ $usb == auto && -n $efi_vars ]]; then
-    d="$(lsblk -no PKNAME "$part" 2>/dev/null | head -n 1)"
-    [[ -n $d && "$(lsblk -dno TRAN "/dev/$d" 2>/dev/null | head -n 1)" == usb ]] && usb_on=1
-fi
 if [[ -z $usb_on ]] && [[ $version == 11 || -n $acct_user ]]; then
     umask 077
     unattend_xml "$([[ $version == 11 ]] && echo 1)" "$acct_user" >"$tmp/setup/autounattend.xml"
@@ -305,7 +313,7 @@ if [[ -n $usb_on ]]; then
     progress 91 "This drive is connected by USB: Windows Setup would refuse it, so Windows is put on another way"
     usbcmd="${OLLIE_WINDOWS_USB_CMD:-/usr/local/share/ollie/windows-usb-install.cmd}"
     [[ -r $usbcmd ]] || die "windows-usb-install.cmd is missing (Update Ollie OS adds it)."
-    command -v mkfs.ntfs >/dev/null && command -v ntfscp >/dev/null || die "ntfs-3g's tools are missing (Update Ollie OS adds them)."
+    command -v mkfs.ntfs >/dev/null && command -v ntfscp >/dev/null && command -v ntfscat >/dev/null || die "ntfs-3g's tools are missing (Update Ollie OS adds them)."
 
     # 1. The part Windows goes in: empty NTFS, in the free room (called OLLIE_WINDOWS).
     wpart="$winpart"
@@ -319,7 +327,7 @@ if [[ -n $usb_on ]]; then
             fss="$(wl__ss "$disk")"
             [[ -n ${fstart:-} && -n ${fss:-} ]] || die "there is no free room on the drive for Windows."
             fend=$(((fstart + fsectors) * fss / 1048576 * 1048576 / fss - 1)) # the end on a 1 MiB boundary
-            ((fend - fstart + 1 >= 20 * 1073741824 / fss)) || die "the free room on the drive is under 20 GB: not enough for Windows."
+            ((fend - fstart + 1 >= 30 * 1073741824 / fss)) || die "the free room on the drive is under 30 GB: not enough for Windows and its image."
             sgdisk -n "0:$fstart:$fend" -t 0:0700 -c 0:OLLIE_WINDOWS "$disk" >/dev/null || die "the part for Windows could not be made."
             partx -a "$disk" 2>/dev/null
             udevadm settle 2>/dev/null
@@ -341,6 +349,29 @@ if [[ -n $usb_on ]]; then
     echo "Ollie OS: Windows goes here" >"$tmp/target-marker"
     ntfscp -f "$wpart" "$tmp/target-marker" OLLIE-WINDOWS-TARGET >/dev/null 2>&1 || die "the part for Windows could not be marked."
 
+    # 1b. The Windows image itself, onto that NTFS part (the script applies it from there and deletes it).
+    progress 92 "Putting the Windows image on the part for Windows (several minutes)"
+    case "$image" in
+    *.swm)
+        for f in "$src"/sources/install*.swm; do
+            b="$(basename "$f")"
+            ntfscp -f "$wpart" "$f" "ollie-image${b#install}" >/dev/null 2>&1 || die "copying Windows to its part failed (is it full?)."
+        done
+        ;;
+    *.esd) ntfscp -f "$wpart" "$image" ollie-image.esd >/dev/null 2>&1 || die "copying Windows to its part failed (is it full?)." ;;
+    *) ntfscp -f "$wpart" "$image" ollie-image.wim >/dev/null 2>&1 || die "copying Windows to its part failed (is it full?)." ;;
+    esac
+    progress 93 "Checking the Windows image on its part"
+    case "$image" in
+    *.swm)
+        for f in "$src"/sources/install*.swm; do
+            b="$(basename "$f")"
+            ntfscat -f "$wpart" "ollie-image${b#install}" 2>/dev/null | cmp -s - "$f" || die "the copy of $b on the part for Windows is not the same as in the Windows file (is the drive failing?)."
+        done
+        ;;
+    *) ntfscat -f "$wpart" "ollie-image.${image##*.}" 2>/dev/null | cmp -s - "$image" || die "the copy of Windows on its part is not the same as in the Windows file (is the drive failing, or full?)." ;;
+    esac
+
     # 2. On the Windows Setup part: a marker, the edition to put on (Pro if there is one), and the script in Setup's start-up image.
     mount "$part" "$tmp/setup" || die "the Windows Setup part could not be opened again."
     echo "Ollie OS: Windows Setup part" >"$tmp/setup/ollie-setup-marker"
@@ -349,9 +380,7 @@ if [[ -n $usb_on ]]; then
         unattend_xml "" "$acct_user" >"$tmp/setup/ollie-unattend.xml"
         umask 022
     fi
-    img=""
-    for f in "$tmp"/setup/sources/install.wim "$tmp"/setup/sources/install.esd "$tmp"/setup/sources/install.swm; do [[ -f $f ]] && img="$f" && break; done
-    idx="$(wimlib-imagex info "$img" 2>/dev/null | awk '
+    idx="$(wimlib-imagex info "$image" 2>/dev/null | awk '
         /^Index:/ {i = $2}
         /^Name:/ {n = $0; sub(/^Name: */, "", n); if (!first) first = i; if (n ~ /^Windows [0-9]+ Pro$/ && !pro) pro = i}
         END {print (pro ? pro : (first ? first : 1))}')"

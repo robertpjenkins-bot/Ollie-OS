@@ -118,7 +118,8 @@ check "the part for Windows is NTFS (it can be listed)" bash -c "ntfsls '$L3' >/
 mounted || { say "  FAIL: could not open the Setup part"; fail=1; }
 check "the Windows Setup part has its marker" test -f "$work/m/ollie-setup-marker"
 check "the edition is Windows 10 Pro (number 2)" grep -q '^2' "$work/m/ollie-image-index.txt"
-check "Windows' files are on the Setup part" test -f "$work/m/sources/install.wim"
+check "the Windows image is NOT on the Setup part (FAT32 cannot hold it whole)" test ! -e "$work/m/sources/install.wim"
+check "the Windows image is on the NTFS part, identical to the one in the ISO" bash -c "ntfscat -f '$L3' ollie-image.wim 2>/dev/null | cmp -s - '$work/tree/sources/install.wim'"
 d="$work/extract"; rm -rf "$d"; mkdir -p "$d"
 wimlib-imagex extract "$work/m/sources/boot.wim" 2 /Windows/System32/winpeshl.ini /Windows/System32/ollie-usb-install.cmd --dest-dir="$d" >/dev/null 2>&1
 check "Setup's start-up image runs the script instead of Setup" grep -q 'ollie-usb-install.cmd' "$d/winpeshl.ini"
@@ -202,6 +203,16 @@ make_iso || exit 1
 if OLLIE_WINDOWS_ACCOUNT="$work/badaccount" run_setup 10 "$work/tree"; then say "  FAIL: accepted"; fail=1; else grep -q "not in the right form" "$work/out.txt" && say "  ok: turned away" || { say "  FAIL: stopped for another reason: $(tail -n 2 "$work/out.txt" | tr '\n' ' ')"; fail=1; }; fi
 
 if [[ ${1:-} == big ]]; then
+    say "== an image over 4 GB, the USB way: goes whole onto the NTFS part (no splitting, no converting)"
+    make_iso big || exit 1
+    rm -f "$work/ntfs.img"; truncate -s 14G "$work/ntfs.img"; L3="$(losetup -f --show "$work/ntfs.img")"
+    rm -f "$work/part.img"; truncate -s 12G "$work/part.img"
+    [[ -n $L ]] && losetup -d "$L" 2>/dev/null
+    L="$(losetup -f --show "$work/part.img")"
+    if OLLIE_WINDOWS_USB_CMD="$here/../profile/airootfs/usr/local/share/ollie/windows-usb-install.cmd" PATH="$work/stub:$PATH" "$setup" --version 10 --iso "$work/tree" --part "$L" --no-label-check --no-efi-vars --usb yes --windows-part "$L3" --root "$work/root" --work "$work" >"$work/out.txt" 2>&1; then say "  ok: ran"; else say "  FAIL: ran ($(tail -n 2 "$work/out.txt" | tr '\n' ' '))"; fail=1; fi
+    check "the whole image (over 4 GB) is on the NTFS part, byte for byte" bash -c "ntfscat -f '$L3' ollie-image.wim 2>/dev/null | cmp -s - '$work/tree/sources/install.wim'"
+    mounted && { check "nothing was split onto the Setup part" bash -c "! ls '$work/m/sources/' | grep -q 'install.*swm'"; umount "$work/m"; }
+    losetup -d "$L3" 2>/dev/null
     say "== an image over 4 GB is split"
     make_iso big || exit 1
     if run_setup 10 "$work/tree"; then say "  ok: ran"; else say "  FAIL: ran ($(tail -n 2 "$work/out.txt" | tr '\n' ' '))"; fail=1; fi

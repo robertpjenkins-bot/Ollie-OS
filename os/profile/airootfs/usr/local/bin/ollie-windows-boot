@@ -63,6 +63,12 @@ if [[ -z $found ]]; then
         if [[ -z $sm ]]; then
             mount -o ro "$sdev" "$tmp" 2>/dev/null && sm=$tmp
         fi
+        # What the script that put Windows on wrote (also when it did not finish): kept for later.
+        if [[ -n $sm ]]; then
+            for lg in ollie-install.log ollie-dism.log; do
+                [[ -f $sm/$lg ]] && cp -f "$sm/$lg" "/var/log/ollie-windows-${lg#ollie-}" 2>/dev/null
+            done
+        fi
         if [[ -n $sm && -f $sm/ollie-windows-installed.txt && -f $sm/EFI/Microsoft/Boot/bootmgfw.efi ]]; then
             rm -rf /boot/EFI/Microsoft.new
             if cp -r "$sm/EFI/Microsoft" /boot/EFI/Microsoft.new; then

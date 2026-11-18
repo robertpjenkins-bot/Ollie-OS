@@ -93,9 +93,11 @@ first="$(grep -o 'for id in [^;]*' "$app" | awk '{print $4}')"
 
 echo "== Windows put on by the USB way: its start-up files are picked up from the Windows Setup part"
 G="$work/root2"
-mkdir -p "$G/boot/loader/entries" "$G/boot/EFI" "$G/etc/ollie" "$G/bin" "$work/setupdir/EFI/Microsoft/Boot"
+mkdir -p "$G/boot/loader/entries" "$G/boot/EFI" "$G/etc/ollie" "$G/bin" "$G/var/log" "$work/setupdir/EFI/Microsoft/Boot"
 echo x >"$work/setupdir/EFI/Microsoft/Boot/bootmgfw.efi"
 echo done >"$work/setupdir/ollie-windows-installed.txt"
+echo "[12:00] Windows is whole" >"$work/setupdir/ollie-install.log"
+echo dism >"$work/setupdir/ollie-dism.log"
 truncate -s 1M "$work/loopfile.img"
 SL="$(losetup -f --show "$work/loopfile.img" 2>/dev/null)"
 if [[ -n $SL ]]; then
@@ -113,11 +115,13 @@ args=("\$@")
 exec /usr/bin/mount --bind "$work/setupdir" "\${args[\$((\${#args[@]} - 1))]}"
 STUB
     chmod +x "$G/bin"/*
-    sed -e "s#\([ \">=]\)/boot#\1$G/boot#g" -e "s#/etc/ollie/windows#$G/etc/ollie/windows#g" "$boot" >"$work/boot2.sh"
+    sed -e "s#\([ \">=]\)/boot#\1$G/boot#g" -e "s#/etc/ollie/windows#$G/etc/ollie/windows#g" -e "s#/var/log/#$G/var/log/#g" -e "s#/var/lib/ollie/windows-account#$G/var/lib-account#g" "$boot" >"$work/boot2.sh"
     chmod +x "$work/boot2.sh"
     PATH="$G/bin:$PATH" "$work/boot2.sh" >"$work/boot2.out" 2>&1 || bad "ollie-windows-boot failed: $(tail -n 3 "$work/boot2.out")"
     [[ -f $G/boot/EFI/Microsoft/Boot/bootmgfw.efi ]] || bad "Windows' start-up files were not copied from the Windows Setup part"
     [[ -f $G/boot/loader/entries/windows.conf ]] || bad "no start-up menu entry for the Windows put on the USB way"
+    grep -q "Windows is whole" "$G/var/log/ollie-windows-install.log" 2>/dev/null || bad "the log of the install was not kept"
+    [[ -f $G/var/log/ollie-windows-dism.log ]] || bad "the DISM log was not kept"
     grep -q '^title *Windows 10' "$G/boot/loader/entries/windows.conf" || bad "the entry is not called Windows 10"
     # not yet installed (no note from the script): nothing is copied
     rm -rf "$G/boot/EFI/Microsoft" "$G/boot/loader/entries/windows.conf" "$work/setupdir/ollie-windows-installed.txt"
