@@ -186,6 +186,9 @@ if [[ $what == 2 ]]; then
         echo
         echo "  The start-up list:"
         sudo -n efibootmgr 2>/dev/null | grep -E '^Boot[0-9A-F]{4}' | sed 's/^/    /' | head -n 12
+        echo
+        echo "  Right now: $(sudo -n efibootmgr 2>/dev/null | grep -E '^(BootCurrent|BootNext|BootOrder):' | tr '\n' ' ')"
+        echo "  (BootNext still there = the computer never tried the Install Windows entry.)"
     fi
     say "Looking for Windows on this computer, and putting it on the start-up menu"
     if ! sudo -n /usr/local/bin/ollie-windows-boot; then

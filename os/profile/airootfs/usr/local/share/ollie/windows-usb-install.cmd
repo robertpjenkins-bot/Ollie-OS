@@ -113,6 +113,10 @@ goto end
 
 :notfound
 color 4F
+rem (the start-up part can still be told about it: that shows the script did start)
+set S=
+for %%L in (C D E F G H I J K L M N O P Q R S T U V W Y Z) do if exist %%L:\ollie-setup-marker set S=%%L:
+if defined S >>%S%\ollie-install.log echo [%date% %time%] script started, but the room for Windows (OLLIE-WINDOWS-TARGET) was not found. T=%T%
 echo.
 echo   Could not find the room Ollie OS made for Windows, or the Windows files.
 echo   Turn the computer off, start Ollie OS and run the Add Windows Updater again.

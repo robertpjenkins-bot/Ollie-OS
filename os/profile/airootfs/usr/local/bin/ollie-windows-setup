@@ -440,7 +440,11 @@ if [[ -n $efi_vars ]] && command -v efibootmgr >/dev/null; then
         echo "=== $(date '+%F %T') $label: part $part (number $partnum) on $disk"
         # (the old entries of an earlier try go)
         while read -r num; do efibootmgr -q -b "$num" -B 2>&1; done < <(efibootmgr | sed -n "s/^Boot\([0-9A-Fa-f]\{4\}\)\*\? $label\b.*/\1/p")
-        efibootmgr -C -d "$disk" -p "$partnum" -L "$label" -l '\efi\boot\bootx64.efi' 2>&1
+        # The whole way to the part (PCI, USB, part), like the computer's own entry for this drive:
+        # the short form (just the part's id) is only found when the computer has already looked at
+        # every USB drive, which a USB drive's entry is not always waiting for. Short form if that fails.
+        efibootmgr -C --full-dev-path -d "$disk" -p "$partnum" -L "$label" -l '\efi\boot\bootx64.efi' 2>&1 ||
+            efibootmgr -C -d "$disk" -p "$partnum" -L "$label" -l '\efi\boot\bootx64.efi' 2>&1
         num="$(efibootmgr | sed -n "s/^Boot\([0-9A-Fa-f]\{4\}\)\*\? $label\b.*/\1/p" | head -n 1)"
         echo "entry: ${num:-none}"
         if [[ -n $num ]]; then
