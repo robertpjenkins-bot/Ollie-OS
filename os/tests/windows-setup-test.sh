@@ -203,6 +203,44 @@ printf 'USER=Bobby<script>\nCOMPUTER=X\nPASSWORD_B64=!!!\n' >"$work/badaccount"
 make_iso || exit 1
 if OLLIE_WINDOWS_ACCOUNT="$work/badaccount" run_setup 10 "$work/tree"; then say "  FAIL: accepted"; fail=1; else grep -q "not in the right form" "$work/out.txt" && say "  ok: turned away" || { say "  FAIL: stopped for another reason: $(tail -n 2 "$work/out.txt" | tr '\n' ' ')"; fail=1; }; fi
 
+say "== the next start: only said to work when the start-up list really shows it chosen"
+mkdir -p "$work/efi" "$work/fakeefi"
+cat >"$work/stub/efibootmgr" <<STUB
+#!/bin/bash
+# a made-up start-up list kept in $work/efi/list
+f="$work/efi/list"; touch "\$f"
+case "\$1" in
+-q) shift ;;
+esac
+case "\$1" in
+-C) [[ -n \${FAIL_CREATE:-} ]] && { echo "Could not prepare Boot variable: No such file or directory" >&2; exit 1; }
+    echo "Boot0007* Install Windows \$VERSION_FOR_STUB HD(5,GPT,abcd)/File(\\efi\\boot\\bootx64.efi)" >>"\$f" ;;
+-n) [[ -n \${FAIL_NEXT:-} ]] && { echo "Could not set BootNext" >&2; exit 1; }
+    sed -i '/^BootNext/d' "\$f"; echo "BootNext: \$2" >>"\$f" ;;
+-b) sed -i "/^Boot\$2/d" "\$f" ;;
+-v|"") cat "\$f" ;;
+esac
+exit 0
+STUB
+chmod +x "$work/stub/efibootmgr"
+sed -e "s#/sys/firmware/efi#$work/fakeefi#g" "$setup" >"$work/setup-efi.sh"; chmod +x "$work/setup-efi.sh"
+efi_run() { # efi_run [ENV=VALUE...]
+    : >"$work/efi/list"; rm -f "$work/efi.log"
+    make_iso || exit 1
+    rm -f "$work/part.img"; truncate -s 12G "$work/part.img"
+    [[ -n $L ]] && losetup -d "$L" 2>/dev/null
+    L="$(losetup -f --show "$work/part.img")"
+    env "$@" VERSION_FOR_STUB=10 OLLIE_WINDOWS_EFI_LOG="$work/efi.log" PATH="$work/stub:$PATH" "$work/setup-efi.sh" --version 10 --iso "$work/tree" --part "$L" --no-label-check --usb no --root "$work/root" --work "$work" >"$work/out.txt" 2>&1
+}
+efi_run A=1; check "the list takes it: it says the next start is set" grep -q '^NEXT-START' "$work/out.txt"
+check "the entry and BootNext are in the list" bash -c "grep -q 'Install Windows 10' '$work/efi/list' && grep -q '^BootNext: 0007' '$work/efi/list'"
+check "what efibootmgr said is kept in the log" grep -q 'entry: 0007' "$work/efi.log"
+efi_run FAIL_CREATE=1; check "no entry could be made: it does NOT say the next start is set" bash -c "! grep -q '^NEXT-START' '$work/out.txt' && grep -q 'would not take the entry' '$work/out.txt'"
+check "the reason is in the log" grep -q 'Could not prepare Boot variable' "$work/efi.log"
+efi_run FAIL_NEXT=1; check "BootNext could not be set: it does NOT say the next start is set" bash -c "! grep -q '^NEXT-START' '$work/out.txt'"
+check "the reason is in the log (BootNext)" grep -q 'Could not set BootNext' "$work/efi.log"
+rm -f "$work/stub/efibootmgr"
+
 if [[ ${1:-} == big ]]; then
     say "== an image over 4 GB, the USB way: goes whole onto the NTFS part (no splitting, no converting)"
     make_iso big || exit 1

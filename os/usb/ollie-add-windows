@@ -161,6 +161,11 @@ if [[ $what == 2 ]]; then
         echo "  The end of DISM's log (/var/log/ollie-windows-dism.log):"
         grep -Ei 'error|fail|0x8|cannot|could not' /var/log/ollie-windows-dism.log | tail -n 12 | sed 's/^/    /'
     fi
+    if [[ -f /var/log/ollie-windows-efi.log ]]; then
+        echo
+        echo "  What the computer said when the next start was set (/var/log/ollie-windows-efi.log):"
+        tail -n 12 /var/log/ollie-windows-efi.log | sed 's/^/    /'
+    fi
     # The computer's own start-up list (what Install Windows and Windows Boot Manager entries exist).
     if have efibootmgr; then
         echo

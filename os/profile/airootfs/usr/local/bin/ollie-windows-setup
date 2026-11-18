@@ -415,13 +415,29 @@ EOF
 rm -f "$root/etc/xdg/autostart/ollie-windows-install.desktop"
 
 # --- Start Windows Setup at the next restart (that once) ----------------------------------------
+# An entry in the computer's start-up list for the Windows Setup part, chosen for the next
+# start only (BootNext). Only said to work ("NEXT-START") when the list really shows it
+# chosen: what efibootmgr said is kept in /var/log/ollie-windows-efi.log.
 if [[ -n $efi_vars ]] && command -v efibootmgr >/dev/null; then
     label="Install Windows $version"
-    while read -r num; do efibootmgr -q -b "$num" -B >/dev/null 2>&1; done < <(efibootmgr | sed -n "s/^Boot\([0-9A-Fa-f]\{4\}\)\*\? $label\b.*/\1/p")
-    efibootmgr -q -C -d "$disk" -p "$partnum" -L "$label" -l '\efi\boot\bootx64.efi' >/dev/null 2>&1
+    efilog="${OLLIE_WINDOWS_EFI_LOG:-/var/log/ollie-windows-efi.log}"
+    {
+        echo "=== $(date '+%F %T') $label: part $part (number $partnum) on $disk"
+        # (the old entries of an earlier try go)
+        while read -r num; do efibootmgr -q -b "$num" -B 2>&1; done < <(efibootmgr | sed -n "s/^Boot\([0-9A-Fa-f]\{4\}\)\*\? $label\b.*/\1/p")
+        efibootmgr -C -d "$disk" -p "$partnum" -L "$label" -l '\efi\boot\bootx64.efi' 2>&1
+        num="$(efibootmgr | sed -n "s/^Boot\([0-9A-Fa-f]\{4\}\)\*\? $label\b.*/\1/p" | head -n 1)"
+        echo "entry: ${num:-none}"
+        if [[ -n $num ]]; then
+            efibootmgr -n "$num" 2>&1
+            efibootmgr -v 2>&1 | grep -E "BootNext|^Boot$num"
+        fi
+    } >>"$efilog" 2>&1
     num="$(efibootmgr | sed -n "s/^Boot\([0-9A-Fa-f]\{4\}\)\*\? $label\b.*/\1/p" | head -n 1)"
-    if [[ -n $num ]] && efibootmgr -q -n "$num" >/dev/null 2>&1; then
+    if [[ -n $num ]] && efibootmgr | grep -qi "^BootNext: *$num"; then
         echo "NEXT-START Windows Setup"
+    else
+        echo "The computer's start-up list would not take the entry for the next start (see $efilog): start it from the computer's start-up menu instead." >&2
     fi
 fi
 progress 100 "Windows Setup is ready"

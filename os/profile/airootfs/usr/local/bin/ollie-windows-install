@@ -92,7 +92,7 @@ if [[ -n ${auto:-} ]] && ((next)); then
 fi
 if kdialog --title "$TITLE" --yes-label "Restart now" --no-label "Later" --yesno "Windows $version Setup is ready.
 
-$( ((next)) && echo "When the computer restarts, Windows Setup starts." || echo "When the computer restarts, pick \"WINSETUP\" in its start-up menu (Dell: F12, Mac: hold Option).") In Windows Setup:
+$( ((next)) && echo "When the computer restarts, Windows Setup starts." || echo "The computer would not start it by itself. When it restarts, open the computer's start-up menu and pick the entry for this drive's Windows Setup part (WINSETUP; Steam Deck and Steam Machine: hold Volume Down while it starts, Dell: F12, Mac: hold Option).") In Windows Setup:
   1. Pick your language and keyboard, then Install.
   2. No product key? Press \"I don't have a product key\".
   3. Where to install it: pick \"Unallocated Space\", then Next.
