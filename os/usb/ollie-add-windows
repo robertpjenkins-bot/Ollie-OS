@@ -161,7 +161,7 @@ if [[ $what == 2 ]]; then
             for lg in ollie-install.log ollie-dism.log; do
                 [[ -f $smnt/$lg ]] && sudo -n cp -f "$smnt/$lg" "/var/log/ollie-windows-${lg#ollie-}" 2>/dev/null
             done
-            [[ -f $smnt/ollie-install.log ]] || echo "  There is no ollie-install.log: the Windows install script never started (Windows Setup's start-up image did not run it)."
+            [[ -f $smnt/ollie-install.log ]] || echo "  There is no ollie-install.log: the Windows install script never started (Windows Setup's start-up image did not run it), or this drive was prepared by an older updater. Run this again, choose 1 and Replace it: it is put on again the newest way."
             sudo -n umount "$smnt" 2>/dev/null
         fi
         rmdir "$smnt" 2>/dev/null

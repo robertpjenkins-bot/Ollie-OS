@@ -397,11 +397,24 @@ if [[ -n $usb_on ]]; then
     sed 's/$/\r/' "$usbcmd" >"$tmp/ollie-usb-install.cmd"
     printf '[LaunchApps]\r\n%%SYSTEMDRIVE%%\\Windows\\System32\\cmd.exe, /k %%SYSTEMDRIVE%%\\Windows\\System32\\ollie-usb-install.cmd\r\n' >"$tmp/winpeshl.ini"
     progress 93 "Putting the Windows script into Windows Setup's start-up image"
+    # Names in the image may differ in capital letters from ours (Winpeshl.ini, system32): Windows
+    # does not tell them apart, so two files that differ only so would fight over the name, and the
+    # old one (that starts Setup itself) could win. So names are matched without caring about capitals.
+    export WIMLIB_IMAGEX_IGNORE_CASE=1
+    printf 'wpeinit\r\ncall %%SYSTEMDRIVE%%\\Windows\\System32\\ollie-usb-install.cmd\r\n' >"$tmp/startnet.cmd"
     wimlib-imagex update "$boot_wim" "$bidx" >/dev/null 2>&1 <<WIMEOF || die "the script could not be put into Windows Setup's start-up image (is the drive full?)."
 add '$tmp/ollie-usb-install.cmd' '/Windows/System32/ollie-usb-install.cmd'
 add '$tmp/winpeshl.ini' '/Windows/System32/winpeshl.ini'
+add '$tmp/startnet.cmd' '/Windows/System32/startnet.cmd'
 WIMEOF
     wimlib-imagex verify "$boot_wim" >/dev/null 2>&1 || die "Windows Setup's start-up image is damaged after the change."
+    # Is it really so? One winpeshl.ini only, and it is ours.
+    n="$(wimlib-imagex dir "$boot_wim" "$bidx" --path=/Windows/System32 2>/dev/null | grep -ic '^/Windows/System32/winpeshl\.ini$')"
+    [[ $n == 1 ]] || die "Windows Setup's start-up image has $n winpeshl.ini files (it must be one): the script would not start."
+    rm -rf "$tmp/chk" && mkdir -p "$tmp/chk"
+    wimlib-imagex extract "$boot_wim" "$bidx" /Windows/System32/winpeshl.ini --dest-dir="$tmp/chk" >/dev/null 2>&1 &&
+        cmp -s "$tmp/chk/winpeshl.ini" "$tmp/winpeshl.ini" || die "the start-up file in Windows Setup's start-up image is not the one that starts the script."
+    unset WIMLIB_IMAGEX_IGNORE_CASE
     sync
     umount "$tmp/setup"
     usb_note=1

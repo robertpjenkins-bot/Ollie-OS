@@ -29,6 +29,9 @@ make_iso() { # make_iso [BIG]: the unpacked ISO in $work/tree
     head -c 200000 /dev/urandom >"$t/setup.exe"
     for i in 1 2 3; do head -c 100000 /dev/urandom >"$t/sources/file$i.dll"; done
     head -c 5000000 /dev/urandom >"$work/img/boot.bin"
+    mkdir -p "$work/img/Windows/System32"
+    printf '[LaunchApps]\r\n%%SYSTEMDRIVE%%\\sources\\setup.exe\r\n' >"$work/img/Windows/System32/Winpeshl.ini" # (capitals differ from ours, as in a real image)
+    printf 'wpeinit\r\n' >"$work/img/Windows/System32/Startnet.cmd"
     wimlib-imagex capture "$work/img" "$t/sources/boot.wim" "Microsoft Windows PE (x64)" --compress=LZX >/dev/null 2>&1 || return 1
     wimlib-imagex append "$work/img" "$t/sources/boot.wim" "Microsoft Windows Setup (x64)" --compress=LZX >/dev/null 2>&1 || return 1
     rm -f "$work/img/boot.bin"
@@ -123,6 +126,9 @@ check "the Windows image is on the NTFS part, identical to the one in the ISO" b
 d="$work/extract"; rm -rf "$d"; mkdir -p "$d"
 wimlib-imagex extract "$work/m/sources/boot.wim" 2 /Windows/System32/winpeshl.ini /Windows/System32/ollie-usb-install.cmd --dest-dir="$d" >/dev/null 2>&1
 check "Setup's start-up image runs the script instead of Setup" grep -q 'ollie-usb-install.cmd' "$d/winpeshl.ini"
+check "there is one winpeshl.ini only (not the old Winpeshl.ini next to ours)" bash -c "[[ \"\$(WIMLIB_IMAGEX_IGNORE_CASE=1 wimlib-imagex dir '$work/m/sources/boot.wim' 2 --path=/Windows/System32 | grep -ic 'winpeshl.ini')\" == 1 ]]"
+check "the old Setup launcher is not what is left" bash -c "! grep -q 'setup.exe' '$d/winpeshl.ini'"
+check "startnet.cmd runs the script too" bash -c "WIMLIB_IMAGEX_IGNORE_CASE=1 wimlib-imagex extract '$work/m/sources/boot.wim' 2 /Windows/System32/startnet.cmd --dest-dir='$work/sn' >/dev/null 2>&1 && grep -q ollie-usb-install '$work/sn/startnet.cmd' && grep -q wpeinit '$work/sn/startnet.cmd'"
 check "winpeshl.ini has Windows line endings" bash -c "grep -q \$'\\r' '$d/winpeshl.ini'"
 check "the script is there, with Windows line endings" bash -c "grep -q 'dism /apply-image' '$d/ollie-usb-install.cmd' && grep -q \$'\\r' '$d/ollie-usb-install.cmd'"
 check "the Setup image (2), not the PE image (1), got it" bash -c "! wimlib-imagex extract '$work/m/sources/boot.wim' 1 /Windows/System32/winpeshl.ini --dest-dir='$work/x1' >/dev/null 2>&1"
