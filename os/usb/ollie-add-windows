@@ -161,6 +161,17 @@ if [[ $what == 2 ]]; then
             for lg in ollie-install.log ollie-dism.log; do
                 [[ -f $smnt/$lg ]] && sudo -n cp -f "$smnt/$lg" "/var/log/ollie-windows-${lg#ollie-}" 2>/dev/null
             done
+            echo "  How the part starts (what the computer runs first):"
+            for f in efi/boot/bootx64.efi efi/microsoft/boot/bcd efi/microsoft/boot/bootmgfw.efi bootmgr.efi sources/boot.wim; do
+                g="$(ls -d "$smnt"/"${f%/*}" >/dev/null 2>&1 && find "$smnt/${f%/*}" -maxdepth 1 -iname "${f##*/}" 2>/dev/null | head -n 1)"
+                if [[ -n $g ]]; then
+                    printf '    %s: %s bytes, starts with %s\n' "$f" "$(stat -c %s "$g")" "$(head -c 2 "$g" | od -An -c | tr -d ' ')"
+                else
+                    printf '    %s: MISSING\n' "$f"
+                fi
+            done
+            sb="$(od -An -t u1 -j4 -N1 /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null | tr -d ' ')"
+            echo "    Secure Boot on this computer: ${sb:-unknown} (1 = on, 0 = off)"
             [[ -f $smnt/ollie-install.log ]] || echo "  There is no ollie-install.log: the Windows install script never started (Windows Setup's start-up image did not run it), or this drive was prepared by an older updater. Run this again, choose 1 and Replace it: it is put on again the newest way."
             sudo -n umount "$smnt" 2>/dev/null
         fi
