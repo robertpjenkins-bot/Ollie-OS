@@ -36,7 +36,5 @@ If your Mac won't open the installer, go to System Settings → Privacy & Securi
 ### Already have Ollie OS?
 Download **Ollie-OS-Latest-Updater-x86_64.AppImage** and open it. It brings everything above. If the Update Checker is on, you'll also get a notification.
 
-### Good to know about Windows
-
 ### Licences
 Ollie OS's own code is MIT-licensed. It is built from free software by many other people: see [THIRD-PARTY-NOTICES.md](https://github.com/robertpjenkins-bot/Ollie-OS/blob/claude/fervent-gates-cs7smv/THIRD-PARTY-NOTICES.md) for what, its licences and its source code. Not made by or connected with Valve, Microsoft, Apple, Mojang, Dell or Nintendo. Windows needs its own licence. Only use games you own.

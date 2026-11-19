@@ -257,7 +257,6 @@ if [[ -z "${OLLIE_DRIVE_YES:-}" ]]; then
     [[ "$answer" == ERASE ]] || die "cancelled; nothing was changed."
 fi
 tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
-# (Windows is asked about at the end, once Ollie OS is on the drive.)
 
 # --- 3. Room on this computer, for the while ------------------------------------------------
 mkdir -p "$work" || die "could not make $work."

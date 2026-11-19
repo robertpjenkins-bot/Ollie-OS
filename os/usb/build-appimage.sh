@@ -324,7 +324,17 @@ fun_pack_files() { # fun_pack_files: its files, into files=()
 gone_files() { # gone_files DIR: the list, as DIR/../remove
     printf '%s\n' /usr/local/bin/ollie-say /usr/local/bin/ollie-readaloud /usr/share/applications/ollie-readaloud.desktop \
         /usr/share/kglobalaccel/ollie-readaloud.desktop /usr/share/icons/hicolor/{256x256,128x128,64x64,48x48}/apps/ollie-readaloud.png \
-        /usr/share/applications/ollie-{sticker,spelling,animator,soundboard,world,space}.desktop >"$1/../remove"
+        /usr/share/applications/ollie-{sticker,spelling,animator,soundboard,world,space}.desktop \
+        /usr/local/bin/ollie-{restart-windows,windows-boot,windows-finish,windows-setup,windows-install} \
+        /usr/local/lib/ollie/{get-windows.py,windows-plan,windows-layout} \
+        /usr/local/share/ollie/{ollie-windows-install.desktop,windows-usb-install.cmd} \
+        /usr/share/applications/ollie-{restart-windows,windows-install}.desktop \
+        /usr/share/icons/hicolor/{256x256,128x128,64x64,48x48}/apps/ollie-restart-windows.png \
+        /usr/share/icons/hicolor/scalable/apps/ollie-restart-windows.svg \
+        /etc/systemd/system/ollie-windows-{boot,finish,plan}.service \
+        /etc/systemd/system/multi-user.target.wants/ollie-windows-{boot,finish,plan}.service \
+        /etc/xdg/autostart/ollie-windows-install.desktop /boot/loader/entries/windows.conf /boot/ollie-windows-plan \
+        /etc/ollie/windows /var/lib/ollie/windows-{10.iso,11.iso,account,firstboot} >"$1/../remove"
 }
 build_fun_pack_updater() {
     local files=()

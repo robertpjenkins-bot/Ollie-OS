@@ -190,7 +190,6 @@ const apps = [
   { id: "install", name: "Install Ollie OS", glyph: "💾", group: "Ollie OS", off: true, run: OFF("Install Ollie OS") },
   { id: "drivers", name: "Driver Installer", glyph: "🧩", group: "System", off: true, run: OFF("The Driver Installer") },
   { id: "discover", name: "Discover", glyph: "🛍️", group: "System", off: true, run: OFF("Discover (the app store)") },
-  { id: "windows", name: "Restart into Windows", glyph: "🪟", group: "System", off: true, run: OFF("Restart into Windows") },
 ];
 for (const a of apps) {
   const b = el("button", { className: "icon" + (a.off ? " off" : ""), title: a.off ? a.name + " (off in the demo)" : a.name },
