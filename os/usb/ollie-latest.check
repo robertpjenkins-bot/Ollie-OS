@@ -41,9 +41,19 @@ done
 gtk-update-icon-cache -q -f /usr/share/icons/hicolor 2>/dev/null
 [[ -s /usr/share/icons/hicolor/256x256/apps/ollie-games.png ]] && ok "The new app icons"
 missing=""
-for p in ffmpeg btrfs-progs rsync arch-install-scripts; do pacman -Q "$p" >/dev/null 2>&1 || missing+=" $p"; done
+for p in ffmpeg btrfs-progs rsync arch-install-scripts iw; do pacman -Q "$p" >/dev/null 2>&1 || missing+=" $p"; done
 if [[ -z $missing ]]; then ok "GIF and sound making, and Recovery Mode's tools are installed"; else echo "LATER Update Ollie OS adds:$missing"; fi
 [[ ! -e /usr/local/bin/ollie-say && ! -e /usr/local/bin/ollie-readaloud ]] && ok "No robot voice"
 [[ -f /usr/local/share/ollie/store/ollie-sticker.desktop ]] && ok "Sticker Maker, Spelling Bee, Animator, Sound Board, World and Space Explorer are in the App Center"
+# Wi-Fi that stays connected: power saving off, now (and in the settings for the next start).
+if [[ -f /etc/NetworkManager/conf.d/20-ollie-wifi.conf ]]; then
+    nmcli general reload conf >/dev/null 2>&1
+    if command -v iw >/dev/null 2>&1; then
+        for w in /sys/class/net/*/wireless; do
+            [[ -d $w ]] && iw dev "$(basename "$(dirname "$w")")" set power_save off >/dev/null 2>&1
+        done
+    fi
+    ok "Wi-Fi stays connected (Wi-Fi power saving is off; a restart finishes it)"
+fi
 [[ "$(cat /etc/ollie-version 2>/dev/null)" == 1.7 ]] && ok "This is Ollie OS 1.7"
 exit 0

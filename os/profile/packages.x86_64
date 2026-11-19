@@ -42,6 +42,8 @@ man-db
 
 # --- network, sound, bluetooth ---
 networkmanager
+# iw: Wi-Fi power saving is switched off at once, without a restart (20-ollie-wifi.conf)
+iw
 bluez
 bluez-utils
 pipewire
