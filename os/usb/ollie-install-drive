@@ -27,8 +27,7 @@
 #
 #   ollie-install-drive
 #
-# For tests: OLLIE_DRIVE=/dev/... and OLLIE_DRIVE_YES=1 (no questions; then
-# OLLIE_DRIVE_WINDOWS=1 for Windows on the start-up menu);
+# For tests: OLLIE_DRIVE=/dev/... and OLLIE_DRIVE_YES=1 (no questions);
 # OLLIE_DRIVE_BOOTSTRAP=FILE, an Arch Linux bootstrap to use as it is, or a
 # folder with an Arch Linux in it, used in place (and changed).
 set -uo pipefail
@@ -94,7 +93,7 @@ build_inside() { # build_inside BOOTSTRAP ROOT SRC TMP CACHE TIMEZONE disk|files
     grep -q '^Server' "$root/etc/pacman.d/mirrorlist" ||
         echo 'Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch' >>"$root/etc/pacman.d/mirrorlist"
     chroot "$root" /usr/bin/env -i HOME=/root TERM="${TERM:-dumb}" LANG=C.UTF-8 \
-        PATH=/usr/local/sbin:/usr/local/bin:/usr/bin OLLIE_INSTALL_TIMEZONE="$tz" OLLIE_WINDOWS_BOOT="${OLLIE_WINDOWS_BOOT:-}" "${env[@]}" \
+        PATH=/usr/local/sbin:/usr/local/bin:/usr/bin OLLIE_INSTALL_TIMEZONE="$tz" "${env[@]}" \
         bash -c 'pacman-key --init && pacman-key --populate archlinux && cd /src && exec bash os/build.sh'
 }
 
@@ -122,7 +121,6 @@ show_progress() { # show_progress PID LOG
 # --- As root: install Ollie OS onto the drive ------------------------------------------
 if [[ "${1:-}" == --root ]]; then
     work=${2:?} bootstrap=${3:?} disk=${4:?} tz=${5:-UTC} owner=${6:?}
-    export OLLIE_WINDOWS_BOOT=${7:-}
     [[ $EUID -eq 0 ]] || die "this part runs as root"
     # Run from a copy in /tmp (root cannot read inside the AppImage): it goes.
     [[ "${BASH_SOURCE[0]}" == /tmp/ollie-install-drive.* ]] && rm -f -- "${BASH_SOURCE[0]}"
@@ -429,9 +427,9 @@ if [[ -z $rc ]]; then
     say "Making Ollie OS on $disk (30 to 90 minutes; it is fine to leave it running)"
     echo "  Arch Linux's packages are downloaded onto the drive, then set up as Ollie OS. The steps show below."
     if [[ $EUID -eq 0 ]]; then
-        bash "$copy" --root "$work" "$bootstrap" "$disk" "${tz:-UTC}" "$(id -u):$(id -g)" "${OLLIE_WINDOWS_BOOT:-}"
+        bash "$copy" --root "$work" "$bootstrap" "$disk" "${tz:-UTC}" "$(id -u):$(id -g)"
     else
-        sudo bash "$copy" --root "$work" "$bootstrap" "$disk" "${tz:-UTC}" "$(id -u):$(id -g)" "${OLLIE_WINDOWS_BOOT:-}"
+        sudo bash "$copy" --root "$work" "$bootstrap" "$disk" "${tz:-UTC}" "$(id -u):$(id -g)"
     fi
     rc=$?
     rm -f -- "$copy"
@@ -451,68 +449,6 @@ fi
 rm -f -- "$work/Ollie-OS-Drive-Writer.log" "$work/ollie-os-source.tar.gz" "$work/$BOOTSTRAP" "$work/$BOOTSTRAP.part"
 rmdir -- "$work" 2>/dev/null
 echo "  (What it put on this computer is removed.)"
-
-# --- 7. Windows: asked now, done at the drive's first start --------------------------------------
-# The answers go on the drive's start-up part (ollie-windows-plan), and at
-# its first start Ollie OS does it as root (usr/local/lib/ollie/windows-plan):
-# makes room for Windows and its Setup part, then "Install Windows" gets
-# Windows Setup ready after you log in; or puts Windows already on the
-# computer on the start-up menu.
-winplan="" wintold=""
-if [[ -n "${OLLIE_DRIVE_YES:-}" ]]; then
-    [[ -n "${OLLIE_DRIVE_WINDOWS:-}" ]] && winplan="MENU=1"
-else
-    disk_gb=$(($(lsblk -bdno SIZE "$disk") / 1000000000))
-    say "Ollie OS is on the drive. Windows too?"
-    read -rp "Do you want to install Windows on this drive too, next to Ollie OS? [y/N] " answer
-    if [[ $answer == [yY]* ]]; then
-        while :; do
-            read -rp "Windows 10 or 11? [11] " v
-            v="${v:-11}"
-            [[ $v == 10 || $v == 11 ]] && break
-            echo "  Type 10 or 11."
-        done
-        min=$((v == 11 ? 64 : 32)) most=$((disk_gb - 38)) # Ollie OS 26 GB, Windows Setup 10, 2 to spare
-        if ((most < min)); then
-            echo "  This drive ($disk_gb GB) is too small for Ollie OS and Windows $v: that needs at least $((min + 38)) GB. Only Ollie OS stays on it."
-        else
-            half=$(((disk_gb - 12) / 2))
-            ((half < min)) && half=$min
-            ((half > most)) && half=$most
-            while :; do
-                read -rp "How many GB of the drive for Windows $v ($min to $most)? [$half] " g
-                g="${g:-$half}"
-                [[ $g =~ ^[0-9]+$ ]] && ((g >= min && g <= most)) && break
-                echo "  A number from $min to $most."
-            done
-            winplan="VERSION=$v
-GB=$g"
-            wintold="  Windows $v: at the drive's first start Ollie OS makes $g GB of room for it. After you
-  log in, Install Windows gets Windows Setup ready (it needs the internet, about 6 GB,
-  or a Windows .iso file) and restarts into it: there, pick \"Unallocated Space\"."
-        fi
-    else
-        read -rp "Should Ollie OS's start-up menu show Windows, on a computer that already has it? [y/N] " answer
-        [[ $answer == [yY]* ]] && winplan="MENU=1" wintold="  Windows: Ollie OS puts it on its start-up menu when it starts on a computer that has it."
-    fi
-fi
-if [[ -n $winplan ]]; then
-    esp="$(lsblk -lnpo NAME,LABEL "$disk" | awk '$2 == "OLLIE_BOOT" {print $1; exit}')"
-    written=""
-    if [[ -n $esp ]]; then
-        if m="$(open_part "$esp" 2>/dev/null)" && printf '%s\n' "$winplan" >"$m/ollie-windows-plan" 2>/dev/null; then
-            written=1
-        elif have sudo && m="$(mktemp -d)" && sudo -n mount "$esp" "$m" 2>/dev/null; then
-            printf '%s\n' "$winplan" | sudo -n tee "$m/ollie-windows-plan" >/dev/null && written=1
-            sudo -n umount "$m"
-            rmdir "$m"
-        fi
-        sync
-        udisks "$(udisks_obj "$esp")" org.freedesktop.UDisks2.Filesystem Unmount 'a{sv}' 0 >/dev/null 2>&1
-    fi
-    [[ -n $written ]] || wintold="  (Windows: the answers could not be saved on the drive. Use Install Ollie OS from the
-  Ollie OS USB instead to have Windows next to it.)"
-fi
 
 echo
 [[ -n $saved ]] && cat "$saved"
@@ -538,7 +474,6 @@ if [[ -n ${unpacked_later:-} ]]; then
     echo "  Its first start unpacks Ollie OS onto the drive: 5 to 15 minutes, once. Do that"
     echo "  first start on one of those (older computers set to BIOS work after it)."
 fi
-[[ -n $wintold ]] && echo "$wintold"
 cat <<'EOF'
   On its first start it asks you to make a username and password.
 

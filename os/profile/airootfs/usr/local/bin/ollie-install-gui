@@ -275,68 +275,6 @@ $details" \
     exit 0
 }
 
-# --- Windows too? -------------------------------------------------------------------
-# Installed next to Ollie OS on this drive: Windows 10 or 11, some of the
-# drive for it, from Microsoft or an ISO file (ollie-install, ollie-windows-setup).
-windows="" winver="" wingb="" winiso=""
-disk_gb=$(($(lsblk -bdno SIZE "$disk") / 1000000000))
-if kdialog --title "$TITLE" --icon ollie-os --yes-label "Yes, install Windows" --no-label "No, only Ollie OS" --yesno \
-    "Do you want to install Windows on this drive too?
-
-Ollie OS and Windows share the drive. Each time the computer starts, you pick
-Ollie OS or Windows."; then
-    if [[ ! -d /sys/firmware/efi ]]; then
-        kdialog --title "$TITLE" --sorry "Windows can't be installed from here: this computer started the old way (Legacy / BIOS).
-
-Only Ollie OS will be installed. To add Windows later, switch the computer to UEFI in its start-up settings and install again."
-    else
-        winver="$(kdialog --title "$TITLE" --geometry 560x220 --radiolist "Which Windows?" \
-            11 "Windows 11" on \
-            10 "Windows 10 (Microsoft no longer sends it security updates)" off)" || winver=""
-    fi
-fi
-if [[ -n $winver ]]; then
-    min=$((winver == 11 ? 64 : 32)) most=$((disk_gb - 38)) # Ollie OS 26 GB, Windows Setup 10, 2 to spare
-    if ((most < min)); then
-        kdialog --title "$TITLE" --sorry "This drive is too small for Ollie OS and Windows $winver: that needs at least $((min + 38)) GB, and it has $disk_gb GB.
-
-Only Ollie OS will be installed."
-        winver=""
-    else
-        half=$(((disk_gb - 12) / 2))
-        ((half < min)) && half=$min
-        ((half > most)) && half=$most
-        sizes=("$half" "Half the drive: $half GB for Windows" on)
-        ((min != half)) && sizes+=("$min" "Just enough: $min GB for Windows (more for Ollie OS)" off)
-        ((most != half)) && sizes+=("$most" "Most of it: $most GB for Windows (26 GB for Ollie OS)" off)
-        wingb="$(kdialog --title "$TITLE" --geometry 560x240 --radiolist "How much of the drive ($disk_gb GB) for Windows $winver?" "${sizes[@]}")" || winver=""
-    fi
-fi
-if [[ -n $winver ]]; then
-    from="$(kdialog --title "$TITLE" --geometry 620x240 --radiolist "Where does Windows $winver come from?" \
-        download "Download it from Microsoft (about 6 GB, so the internet must be on)" on \
-        file "A Windows $winver .iso file I already have" off)" || from=download
-    if [[ $from == file ]]; then
-        winiso="$(kdialog --title "Pick the Windows $winver ISO" --getopenfilename /run/media "*.iso|Windows ISO files")" || winiso=""
-        [[ -n $winiso ]] || from=download
-    fi
-    windows=1
-fi
-# Not installing it, but Windows is on another drive: on the menu too?
-if [[ -z $winver ]]; then
-    other=""
-    while read -r name type; do
-        [[ $type == disk && /dev/$name != "$disk" && $name != "$live_disk" ]] || continue
-        [[ "$(contents "/dev/$name")" == "has Windows on it" ]] && other=1
-    done < <(lsblk -dnro NAME,TYPE)
-    if [[ -n $other ]] && kdialog --title "$TITLE" --icon ollie-os --yes-label "Yes, Windows too" --no-label "No" --yesno \
-        "This computer has Windows on another drive. Should Ollie OS's start-up menu show it too?
-
-Each time the computer starts you can pick Ollie OS or Windows. Windows itself is not changed."; then
-        windows=1
-    fi
-fi
-
 # The time zone this Ollie OS already uses, or UTC.
 tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
 [[ -n "$tz" ]] || tz=UTC
@@ -344,9 +282,8 @@ tz="$(readlink /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p')"
 # --- Install ---------------------------------------------------------------------
 bar="$(kdialog --title "$TITLE" --progressbar "Preparing the drive..." 100)"
 qdbus6 $bar showCancelButton false >/dev/null 2>&1
-OLLIE_INSTALL_DISK="$disk" OLLIE_INSTALL_YES=1 OLLIE_INSTALL_PROGRESS=1 OLLIE_INSTALL_TIMEZONE="$tz" OLLIE_INSTALL_WINDOWS="$windows" \
-    OLLIE_INSTALL_WINDOWS_VERSION="$winver" OLLIE_INSTALL_WINDOWS_GB="$wingb" OLLIE_INSTALL_WINDOWS_ISO="$winiso" \
-    sudo -n --preserve-env=OLLIE_INSTALL_DISK,OLLIE_INSTALL_YES,OLLIE_INSTALL_PROGRESS,OLLIE_INSTALL_TIMEZONE,OLLIE_INSTALL_WINDOWS,OLLIE_INSTALL_WINDOWS_VERSION,OLLIE_INSTALL_WINDOWS_GB,OLLIE_INSTALL_WINDOWS_ISO \
+OLLIE_INSTALL_DISK="$disk" OLLIE_INSTALL_YES=1 OLLIE_INSTALL_PROGRESS=1 OLLIE_INSTALL_TIMEZONE="$tz" \
+    sudo -n --preserve-env=OLLIE_INSTALL_DISK,OLLIE_INSTALL_YES,OLLIE_INSTALL_PROGRESS,OLLIE_INSTALL_TIMEZONE \
     /usr/local/bin/ollie-install </dev/null 2>&1 | tee "$log" |
     while read -r word pct text; do
         [[ "$word" == PROGRESS ]] || continue
@@ -366,40 +303,11 @@ The details are on the desktop (Install-Ollie-OS-problem.txt). DC - Debug Comput
     exit 1
 fi
 
-# Windows: ready to install at the next start, or later from Ollie OS.
-winnote=""
-if [[ -n $winver ]]; then
-    if grep -q '^NEXT-START ' "$log"; then
-        winnote="
-
-Windows $winver: when the computer restarts, Windows Setup starts (on a Mac,
-hold Option and pick \"WINSETUP\"). In Windows Setup:
-  1. Pick your language and keyboard, then Install.
-  2. No product key? Press \"I don't have a product key\".
-  3. Where to install it: pick \"Unallocated Space\" ($wingb GB), then Next.
-     Don't delete or format the other parts: they are Ollie OS.
-Afterwards the start-up menu shows Ollie OS and Windows $winver."
-    elif why="$(sed -n 's/^WINDOWS-LATER //p' "$log" | tail -n 1)"; [[ -n $why ]]; then
-        winnote="
-
-Windows $winver could not be got ready: $why
-Ollie OS is installed. Open \"Install Windows\" from Ollie OS's apps menu to try again."
-    else
-        winnote="
-
-Windows $winver: open \"Install Windows\" from Ollie OS's apps menu."
-    fi
-elif [[ -n $windows ]]; then
-    winnote="
-
-Windows: Ollie OS puts it on its start-up menu at its first start. The menu
-shows for a few seconds each time it starts."
-fi
 if kdialog --title "$TITLE" --yes-label "Restart now" --no-label "Later" --yesno \
     "Ollie OS is installed on $disk.
 
 Remove the USB drive, then restart. On its first start it asks you to create a
-username and password.$winnote
+username and password.
 
 If the computer still starts the old system:
   Dell: tap F12 at the Dell logo and pick the drive (\"UEFI: ...\" or \"OLLIE_BOOT\").

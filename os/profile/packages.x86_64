@@ -24,10 +24,8 @@ e2fsprogs
 exfatprogs
 ntfs-3g
 gptfdisk
-# Installing Windows next to Ollie OS (ollie-windows-setup): the start-up
-# list, and Windows images bigger than 4 GB in parts
+# Ollie OS's own entry in the computer's start-up list (ollie-install)
 efibootmgr
-wimlib
 # Secure Boot: signing Ollie OS's start-up (/usr/local/lib/ollie/secureboot)
 sbsigntools
 mokutil

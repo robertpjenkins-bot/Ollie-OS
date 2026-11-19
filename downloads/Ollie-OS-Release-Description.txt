@@ -12,9 +12,6 @@ Made by biobro (age 8). A gaming computer built on Arch Linux, with Steam, Minec
 - **Mouse Maker.** Draw your own mouse pointer, square by square, try it out, and press **Use this mouse** to make it the computer's real pointer. **Back to the normal mouse** puts the old one back. It's on the Welcome screen as **My own mouse**.
 
 ### Also new since 1.5
-- **Install Windows too:** the installer asks if you want Windows 10 or 11 next to Ollie OS.
-- **Add Windows Updater** (**Ollie-OS-Add-Windows-Updater-x86_64.AppImage**): already have Ollie OS? Choose 1 to add Windows, or 2 to fix the Windows boot (the newest "Restart into Windows" and Windows on the start-up menu again). Adding asks Windows 10 or 11 and regular or ARM computer, looks for a Windows file in Downloads (or downloads one), tells you if Windows is already there (and lets you replace it: the old Windows parts are erased, only the ones listed and only after you type DELETE, and a fresh Windows is put in), makes room for it (free room first, else Ollie OS's part is made smaller). After one restart the computer does the rest by itself and restarts into Windows Setup. It asks for a Windows user name and password and sets that account up, so Windows has no questions of its own and its login screen asks for that password. Windows Setup is checked for damaged files before it starts. On a drive connected by USB (which Windows Setup refuses) it skips Windows Setup's checks and puts Windows on the drive itself; Windows may not start from USB on every computer.
-- **Windows Remover** (**Ollie-OS-Windows-Remover-x86_64.AppImage**): takes Windows and the parts it lives in off a drive. You pick the parts, then type DELETE. It cleans Windows' start-up entries and can give the free room back to Ollie OS.
 - **No more robot voice.**
 - **Pick your own apps:** Sticker Maker, Spelling Bee, Ollie Animator, Sound Board, World Explorer and Space Explorer are in the App Center.
 - **New look:** real icons instead of emoji, shorter text, each app with its own style.
@@ -40,9 +37,6 @@ If your Mac won't open the installer, go to System Settings → Privacy & Securi
 Download **Ollie-OS-Latest-Updater-x86_64.AppImage** and open it. It brings everything above. If the Update Checker is on, you'll also get a notification.
 
 ### Good to know about Windows
-- Installing Windows needs internet (about 6 GB) and at least 64 GB of space on the drive for Windows.
-- Windows asks for a product key. You can press "I don't have a product key" and add one later.
-- Windows 10 doesn't get security updates from Microsoft anymore. Windows 11 is the safer choice.
 
 ### Licences
 Ollie OS's own code is MIT-licensed. It is built from free software by many other people: see [THIRD-PARTY-NOTICES.md](https://github.com/robertpjenkins-bot/Ollie-OS/blob/claude/fervent-gates-cs7smv/THIRD-PARTY-NOTICES.md) for what, its licences and its source code. Not made by or connected with Valve, Microsoft, Apple, Mojang, Dell or Nintendo. Windows needs its own licence. Only use games you own.

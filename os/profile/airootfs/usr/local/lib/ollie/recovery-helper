@@ -162,8 +162,6 @@ copy /etc/fstab /etc/mkinitcpio.d/linux.preset /etc/systemd/system/emergency.ser
 for f in /etc/mkinitcpio.conf.d/*; do [[ $f == */archiso.conf ]] || copy "$f"; done
 # The computer's name, time zone, language and keyboard.
 copy /etc/hostname /etc/localtime /etc/locale.conf /etc/locale.gen /etc/vconsole.conf /etc/adjtime /etc/X11/xorg.conf.d/00-keyboard.conf
-# Windows on the start-up menu.
-copy /etc/systemd/system/multi-user.target.wants/ollie-windows-boot.service
 
 # merge_accounts: the new system's own accounts, plus every person's account
 # (user IDs 1000 and up) from this one, with their passwords and groups.

@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Windows Boot Updater
-Comment=Put Windows on Ollie OS's start-up menu
-Exec=ollie-windows-updater
-Icon=ollie-os
-Terminal=false
-Categories=System;

@@ -95,8 +95,6 @@ ICONS = {
     "ollie-download-tracker": (TEAL, '<path d="M128 64 V146 M96 116 L128 148 L160 116"/><path d="M68 150 V182 H188 V150"/>'),
     "ollie-write": (PURPLE, f'<rect x="94" y="104" width="68" height="94" rx="14"/><rect x="106" y="60" width="44" height="44" rx="4"/>'
                             f'<rect x="114" y="74" width="9" height="12"{F}/><rect x="133" y="74" width="9" height="12"{F}/>'),
-    "ollie-restart-windows": (BLUE, '<rect x="60" y="68" width="136" height="116" rx="12"/><line x1="60" y1="98" x2="196" y2="98"/>'
-                                    '<path d="M128 98 V184 M60 141 H196" stroke-width="10"/>'),
     "ollie-appcenter": (PINK, '<path d="M74 102 H182 L172 190 H84 Z"/><path d="M104 102 V90 A24 24 0 0 1 152 90 V102"/>'),
     "ollie-mathquest": (TEAL, '<path d="M100 76 V120 M78 98 H122"/><path d="M134 98 H178"/><path d="M82 140 L118 176 M118 140 L82 176"/><path d="M134 148 H178 M134 168 H178"/>'),
     "ollie-trophies": (MUSTARD, '<path d="M90 68 H166 V106 A38 38 0 0 1 90 106 Z"/><path d="M90 82 H70 A18 18 0 0 0 90 118 M166 82 H186 A18 18 0 0 1 166 118"/>'

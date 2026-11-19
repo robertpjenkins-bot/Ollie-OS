@@ -48,8 +48,6 @@ was made.
 These come from their makers, when you ask for them, under the makers' own
 terms:
 
-- **Windows 10 and 11** come from Microsoft's website. Windows needs its own
-  licence (a product key); Ollie OS does not include one.
 - **Minecraft** comes from Flathub; playing needs a Minecraft account.
 - **Apps and games from Flathub, Steam, Epic and GOG**: each under its own terms.
 - **Game covers** (Find covers in Games) are looked up online for the games you

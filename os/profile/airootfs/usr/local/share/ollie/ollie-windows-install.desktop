@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Install Windows
-Comment=Get Windows Setup ready again, next to Ollie OS
-Exec=/usr/local/bin/ollie-windows-install
-Icon=ollie-restart-windows
-Terminal=false
-Categories=System;

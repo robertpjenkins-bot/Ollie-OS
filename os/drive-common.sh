@@ -161,18 +161,6 @@ fix_first_start() {
     ln -sfn /usr/lib/systemd/system/sddm.service "$t/etc/systemd/system/display-manager.service"
 }
 
-# Windows on the start-up menu (OLLIE_WINDOWS_BOOT): the drive's own start
-# looks for it on each computer until it has it (ollie-windows-boot.service).
-windows_on() {
-    [[ -n ${OLLIE_WINDOWS_BOOT:-} ]] || return 0
-    mkdir -p "$t/etc/systemd/system/multi-user.target.wants" &&
-        ln -sfn /etc/systemd/system/ollie-windows-boot.service "$t/etc/systemd/system/multi-user.target.wants/ollie-windows-boot.service"
-}
-test_windows() {
-    [[ -L "$t/etc/systemd/system/multi-user.target.wants/ollie-windows-boot.service" && -x "$t/usr/local/bin/ollie-windows-boot" ]] ||
-        { echo "it is not switched on"; return 1; }
-}
-
 # The checks both ways run first, in this order.
 check_common() {
     check "All of Ollie OS's programs are there, nothing damaged ($(in_target pacman -Qq | wc -l) programs)" test_files fix_files

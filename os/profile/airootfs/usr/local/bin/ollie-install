@@ -10,18 +10,6 @@
 #   OLLIE_INSTALL_DISK=/dev/...  OLLIE_INSTALL_YES=1  (no questions)
 #   OLLIE_INSTALL_HOSTNAME, OLLIE_INSTALL_TIMEZONE
 #   OLLIE_INSTALL_PROGRESS=1     (prints "PROGRESS percent text" lines)
-#   OLLIE_INSTALL_WINDOWS=1      (Windows on the start-up menu: at each start,
-#                                until it has, the installed Ollie OS looks for
-#                                Windows on the computer: ollie-windows-boot)
-#   OLLIE_INSTALL_WINDOWS_VERSION=10|11  (install Windows next to Ollie OS:
-#                                OLLIE_INSTALL_WINDOWS_GB of the drive is kept
-#                                for it, a Windows Setup part (OLLIE_WINSETUP,
-#                                10 GB at the end) gets Windows Setup from
-#                                OLLIE_INSTALL_WINDOWS_ISO or from Microsoft
-#                                (ollie-windows-setup), and the next start runs
-#                                it. If getting it fails, Ollie OS is still
-#                                installed: "Install Windows" in its apps menu
-#                                tries again. Prints "WINDOWS-LATER why" then.)
 #   OLLIE_INSTALL_NO_EFI_VARS=1  (leaves this computer's start-up list alone:
 #                                 the Drive Writer, installing from SteamOS)
 #   OLLIE_INSTALL_FILL=COMMAND   (puts Ollie OS's system on the drive by running
@@ -35,16 +23,13 @@ readonly NEED_BYTES=$((25 * 1024 * 1024 * 1024 + 64 * 1024 * 1024))
 readonly SOURCE=/run/archiso/airootfs
 readonly BOOTMNT=/run/archiso/bootmnt
 readonly TARGET=/mnt/ollie
-readonly SETUP_GB=10 # the Windows Setup part, when Windows is installed too
 
 bold=$'\e[1m' teal=$'\e[36m' red=$'\e[31m' reset=$'\e[0m'
 say() { printf '%s==>%s %s\n' "$teal$bold" "$reset" "$*"; }
-# With Windows too, Ollie OS's part of the work is the first half of the bar.
 progress() {
     [[ -n "${OLLIE_INSTALL_PROGRESS:-}" ]] || return 0
-    if [[ -n $winver ]]; then echo "PROGRESS $(($1 / 2)) $2"; else echo "PROGRESS $1 $2"; fi
+    echo "PROGRESS $1 $2"
 }
-winver="${OLLIE_INSTALL_WINDOWS_VERSION:-}"
 die() {
     printf '%sError:%s %s\n' "$red$bold" "$reset" "$*" >&2
     exit 1
@@ -57,7 +42,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-[[ $EUID -eq 0 ]] || exec sudo --preserve-env=OLLIE_INSTALL_DISK,OLLIE_INSTALL_YES,OLLIE_INSTALL_HOSTNAME,OLLIE_INSTALL_TIMEZONE,OLLIE_INSTALL_PROGRESS,OLLIE_INSTALL_NO_EFI_VARS,OLLIE_INSTALL_WINDOWS,OLLIE_INSTALL_WINDOWS_VERSION,OLLIE_INSTALL_WINDOWS_GB,OLLIE_INSTALL_WINDOWS_ISO "$0" "$@"
+[[ $EUID -eq 0 ]] || exec sudo --preserve-env=OLLIE_INSTALL_DISK,OLLIE_INSTALL_YES,OLLIE_INSTALL_HOSTNAME,OLLIE_INSTALL_TIMEZONE,OLLIE_INSTALL_PROGRESS,OLLIE_INSTALL_NO_EFI_VARS "$0" "$@"
 [[ -n "${OLLIE_INSTALL_FILL:-}" || -d "$SOURCE/usr" ]] || die "this only works when started from the Ollie OS live USB."
 
 # The drive the live USB itself is on, so it is never offered as a target.
@@ -118,32 +103,6 @@ hostname="${OLLIE_INSTALL_HOSTNAME:-}" timezone="${OLLIE_INSTALL_TIMEZONE:-}"
 hostname="${hostname:-ollie}"
 [[ "$hostname" =~ ^[A-Za-z0-9-]{1,63}$ ]] || die "the computer name may only use letters, digits and -."
 [[ -n "${OLLIE_INSTALL_YES:-}" ]] || read -rp "Time zone, e.g. America/New_York or Europe/London [UTC]: " timezone
-windows="${OLLIE_INSTALL_WINDOWS:-}" wingb="${OLLIE_INSTALL_WINDOWS_GB:-}" winiso="${OLLIE_INSTALL_WINDOWS_ISO:-}"
-disk_gb=$(($(lsblk -bdno SIZE "$disk") / 1000000000))
-if [[ -z "${OLLIE_INSTALL_YES:-}" ]]; then
-    read -rp "Install Windows on this drive too, next to Ollie OS? [y/N] " answer
-    if [[ ${answer,,} == y* ]]; then
-        read -rp "Windows 10 or 11? [11] " winver
-        winver="${winver:-11}"
-        wingb=$(((disk_gb - SETUP_GB) / 2))
-        read -rp "How many GB for Windows? [$wingb] " answer
-        wingb="${answer:-$wingb}"
-        read -rp "A Windows .iso file you have (empty: download it from Microsoft): " winiso
-    else
-        read -rp "Should Windows be on the start-up menu too, if this computer has it? [y/N] " windows
-        [[ ${windows,,} == y* ]] && windows=1 || windows=""
-    fi
-fi
-if [[ -n $winver ]]; then
-    [[ $winver == 10 || $winver == 11 ]] || die "Windows must be 10 or 11."
-    [[ -d /sys/firmware/efi ]] || die "installing Windows needs the computer to start the new way (UEFI); it started the old way (BIOS / Legacy)."
-    [[ $wingb =~ ^[0-9]+$ ]] && ((wingb >= (winver == 11 ? 64 : 32))) || die "Windows $winver needs at least $((winver == 11 ? 64 : 32)) GB."
-    # (2 GB to spare: the start-up part, and GB / GiB.)
-    root_gb=$((disk_gb - wingb - SETUP_GB - 2))
-    ((root_gb >= 26)) || die "not enough room: Ollie OS needs 26 GB besides the $wingb GB for Windows and $SETUP_GB GB for Windows Setup."
-    [[ -z $winiso || -e $winiso ]] || die "$winiso is not there."
-    windows=1
-fi
 timezone="${timezone:-UTC}"
 [[ -f "/usr/share/zoneinfo/$timezone" ]] || die "unknown time zone '$timezone'."
 
@@ -156,16 +115,8 @@ for part in $(lsblk -lnpo NAME "$disk" | tail -n +2); do
 done
 wipefs -af "$disk" >/dev/null
 sgdisk --zap-all "$disk" >/dev/null
-if [[ -n $winver ]]; then
-    # Ollie OS, then the space for Windows (left empty: Windows Setup makes
-    # its parts there), then Windows Setup at the end.
-    sgdisk -n "1:0:+$BOOT_SIZE" -t 1:ef00 -c 1:OLLIE_BOOT \
-        -n "2:0:+$((root_gb * 1000000000 / 1048576))M" -t 2:8304 -c 2:OLLIE_ROOT \
-        -n "3:-${SETUP_GB}G:0" -t 3:0700 -c 3:OLLIE_WINSETUP "$disk" >/dev/null
-else
-    sgdisk -n "1:0:+$BOOT_SIZE" -t 1:ef00 -c 1:OLLIE_BOOT \
-        -n "2:0:0" -t 2:8304 -c 2:OLLIE_ROOT "$disk" >/dev/null
-fi
+sgdisk -n "1:0:+$BOOT_SIZE" -t 1:ef00 -c 1:OLLIE_BOOT \
+    -n "2:0:0" -t 2:8304 -c 2:OLLIE_ROOT "$disk" >/dev/null
 partprobe "$disk" 2>/dev/null || true
 udevadm settle
 
@@ -198,7 +149,7 @@ elif [[ -n "${OLLIE_INSTALL_PROGRESS:-}" ]]; then
     progress 5 "Copying Ollie OS"
     # rsync's overall percentage, as 5 to 75 of the whole install.
     rsync -aAXH --info=progress2 --no-inc-recursive --exclude=/boot/ "$SOURCE/" "$TARGET/" |
-        stdbuf -o0 tr '\r' '\n' | awk -v half="${winver:+1}" '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) {p = int(5 + $i * 70 / 100); if (half) p = int(p / 2); if (p != last) {print "PROGRESS " p " Copying Ollie OS"; fflush(); last = p}}}'
+        stdbuf -o0 tr '\r' '\n' | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+%$/) {p = int(5 + $i * 70 / 100); if (p != last) {print "PROGRESS " p " Copying Ollie OS"; fflush(); last = p}}}'
     ((PIPESTATUS[0] == 0)) || die "copying Ollie OS failed (is the drive faulty?)."
 else
     say "Copying Ollie OS (this takes a few minutes)"
@@ -274,11 +225,6 @@ else
     bootctl install --esp-path=/boot 2>/dev/null || bootctl install --esp-path=/boot --no-variables
 fi
 CHROOT
-if [[ -n $windows ]]; then
-    mkdir -p "$TARGET/etc/systemd/system/multi-user.target.wants"
-    ln -sfn /etc/systemd/system/ollie-windows-boot.service \
-        "$TARGET/etc/systemd/system/multi-user.target.wants/ollie-windows-boot.service"
-fi
 
 cat >"$TARGET/boot/loader/loader.conf" <<'EOF'
 default ollie.conf
@@ -352,27 +298,6 @@ EOF
     else
         echo "(Could not add the start-up code for older computers; new computers are not affected.)"
     fi
-fi
-
-# --- Windows, next to it ---------------------------------------------------------------
-if [[ -n $winver ]]; then
-    say "Getting Windows $winver Setup ready"
-    # "Install Windows" in the apps menu, to try again if this does not work.
-    install -m 0644 /usr/local/share/ollie/ollie-windows-install.desktop "$TARGET/usr/share/applications/"
-    args=(--version "$winver" --part "${disk}${sep}3" --work "$TARGET/var/tmp" --root "$TARGET")
-    [[ -n $winiso ]] && args+=(--iso "$winiso")
-    [[ -n "${OLLIE_INSTALL_NO_EFI_VARS:-}" ]] && args+=(--no-efi-vars)
-    winlog="$(mktemp)"
-    if ! /usr/local/bin/ollie-windows-setup "${args[@]}" 2>"$winlog" | while read -r word pct text; do
-        case "$word" in
-        PROGRESS) if [[ -n "${OLLIE_INSTALL_PROGRESS:-}" ]]; then echo "PROGRESS $((50 + pct / 2)) $text"; else echo "    $text ($pct%)"; fi ;;
-        *) echo "$word $pct $text" ;;
-        esac
-    done; then
-        why="$(sed -n 's/^Error: //p' "$winlog" | tail -n 1)"
-        echo "WINDOWS-LATER ${why:-getting Windows Setup ready did not work.}"
-    fi
-    rm -f "$winlog"
 fi
 
 sync

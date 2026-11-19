@@ -11,9 +11,6 @@
 #   Ollie-OS-Storage-Updater-x86_64.AppImage      adds Ollie OS Storage, the new Fixer and Stuff Saver
 #   Ollie-OS-Drive-Installer-x86_64.AppImage      adds the Install Ollie OS that installs into a drive or folder
 #   Ollie-OS-Discover-Updater-x86_64.AppImage     adds Discover, the app store, with Flathub
-#   Ollie-OS-Windows-Boot-Updater-x86_64.AppImage puts Windows on Ollie OS's start-up menu
-#   Ollie-OS-Windows-Remover-x86_64.AppImage takes Windows and its parts off a drive (you pick, then type DELETE)
-#   Ollie-OS-Add-Windows-Updater-x86_64.AppImage adds Windows 10 or 11 next to an installed Ollie OS (asks the drive, version, ARM or not, downloads it)
 #   Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage adds Wallpaper Maker (your name, or a drawing)
 #   Ollie-OS-Download-Tracker-Updater-x86_64.AppImage adds Download Tracker (biobro's GitHub downloads)
 #   Ollie-OS-Game-Pack-Updater-x86_64.AppImage   adds the Game Pack: Game Mode, Speed Boost, FPS, Minecraft, Settings...
@@ -225,67 +222,6 @@ build_discover_updater() {
     rm -rf "$appdir"
 }
 build_discover_updater
-# Windows on Ollie OS's start-up menu, and Restart into Windows.
-build_windows_updater() {
-    local appdir="$out/OllieWindows.AppDir" f
-    rm -rf "$appdir"
-    install -D -m 0755 "$here/ollie-windows-updater" "$appdir/usr/bin/ollie-windows-updater"
-    for f in usr/local/bin/ollie-windows-boot usr/local/bin/ollie-restart-windows usr/share/applications/ollie-restart-windows.desktop; do
-        mkdir -p "$(dirname "$appdir/usr/share/ollie-apps/airootfs/$f")"
-        cp -a "$os/profile/airootfs/$f" "$appdir/usr/share/ollie-apps/airootfs/$f"
-    done
-    printf '#!/bin/sh\n# AppImage entry point: put Windows on Ollie OS'"'"'s start-up menu.\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/ollie-windows-updater" "$@"\n' >"$appdir/AppRun"
-    chmod 0755 "$appdir/AppRun"
-    install -m 0644 "$here/ollie-windows-updater.desktop" "$appdir/ollie-windows-updater.desktop"
-    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
-    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Windows-Boot-Updater-x86_64.AppImage"
-    rm -rf "$appdir"
-}
-build_windows_updater
-# Add Windows Updater: adds Windows 10 or 11 next to an installed Ollie OS
-# and adds Install Windows (what the Installer's "yes to Windows" leaves).
-build_add_windows_updater() {
-    local appdir="$out/OllieAddWindows.AppDir" f
-    rm -rf "$appdir"
-    install -D -m 0755 "$here/ollie-add-windows" "$appdir/usr/bin/ollie-add-windows"
-    for f in usr/local/lib/ollie/windows-plan usr/local/lib/ollie/windows-layout usr/local/lib/ollie/get-windows.py \
-        etc/systemd/system/ollie-windows-plan.service etc/systemd/system/ollie-windows-finish.service \
-        usr/local/bin/ollie-windows-finish \
-        usr/local/bin/ollie-windows-setup usr/local/bin/ollie-windows-install \
-        usr/local/bin/ollie-windows-boot usr/local/bin/ollie-restart-windows \
-        usr/local/share/ollie/ollie-windows-install.desktop usr/local/share/ollie/windows-usb-install.cmd usr/share/applications/ollie-restart-windows.desktop \
-        usr/share/icons/hicolor/scalable/apps/ollie-restart-windows.svg \
-        usr/share/icons/hicolor/48x48/apps/ollie-restart-windows.png usr/share/icons/hicolor/64x64/apps/ollie-restart-windows.png \
-        usr/share/icons/hicolor/128x128/apps/ollie-restart-windows.png usr/share/icons/hicolor/256x256/apps/ollie-restart-windows.png; do
-        mkdir -p "$(dirname "$appdir/usr/share/ollie-apps/airootfs/$f")"
-        cp -a "$os/profile/airootfs/$f" "$appdir/usr/share/ollie-apps/airootfs/$f"
-    done
-    printf '#!/bin/sh\n# AppImage entry point: add Windows 10 next to Ollie OS.\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/ollie-add-windows" "$@"\n' >"$appdir/AppRun"
-    chmod 0755 "$appdir/AppRun"
-    install -m 0644 "$here/ollie-add-windows.desktop" "$appdir/ollie-add-windows.desktop"
-    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
-    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Add-Windows-Updater-x86_64.AppImage"
-    rm -rf "$appdir"
-}
-build_add_windows_updater
-# Windows Remover: takes Windows and its parts off a drive (you pick the parts,
-# then type DELETE), and can give the room back to Ollie OS.
-build_windows_remover() {
-    local appdir="$out/OllieWindowsRemover.AppDir" f
-    rm -rf "$appdir"
-    install -D -m 0755 "$here/ollie-windows-remover" "$appdir/usr/bin/ollie-windows-remover"
-    for f in usr/local/lib/ollie/windows-layout; do
-        mkdir -p "$(dirname "$appdir/usr/share/ollie-apps/airootfs/$f")"
-        cp -a "$os/profile/airootfs/$f" "$appdir/usr/share/ollie-apps/airootfs/$f"
-    done
-    printf '#!/bin/sh\n# AppImage entry point: take Windows off a drive.\nHERE="$(dirname "$(readlink -f "$0")")"\nexec "$HERE/usr/bin/ollie-windows-remover" "$@"\n' >"$appdir/AppRun"
-    chmod 0755 "$appdir/AppRun"
-    install -m 0644 "$here/ollie-windows-remover.desktop" "$appdir/ollie-windows-remover.desktop"
-    install -D -m 0644 "$os/art/ollie-os.svg" "$appdir/ollie-os.svg"
-    ARCH=x86_64 "$tool" --appimage-extract-and-run "$appdir" "$out/Ollie-OS-Windows-Remover-x86_64.AppImage"
-    rm -rf "$appdir"
-}
-build_windows_remover
 # Wallpaper Maker: a background with your name (and the OS called by it), or drawn.
 build_wallpaper_updater() {
     build_apps_updater Ollie-OS-Wallpaper-Maker-Updater-x86_64.AppImage "Wallpaper Maker Updater" "Wallpaper Maker" \
@@ -412,7 +348,6 @@ build_latest_updater() {
     game_pack_files
     fun_pack_files
     files+=(etc/ollie-version usr/share/applications/ollie-recovery.desktop
-        usr/local/bin/ollie-windows-boot etc/systemd/system/ollie-windows-boot.service
         usr/local/lib/ollie/snapshot usr/local/bin/ollie-undo-update usr/share/applications/ollie-undo-update.desktop
         etc/xdg/autostart/ollie-undo-update.desktop usr/local/share/ollie/pacman-hooks/00-ollie-save.hook
         etc/systemd/system/ollie-saved-cleanup.service etc/systemd/system/multi-user.target.wants/ollie-saved-cleanup.service)

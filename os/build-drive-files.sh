@@ -94,7 +94,6 @@ CHROOT
 # Finished at the first start, as root: the start-up code for older computers.
 mkdir -p "$t/etc/systemd/system/multi-user.target.wants"
 ln -sfn /etc/systemd/system/ollie-drive-finish.service "$t/etc/systemd/system/multi-user.target.wants/ollie-drive-finish.service"
-windows_on
 
 # The start-up part: what is in the system's /boot (the kernel, its start-up
 # image, CPU microcode), systemd-boot as every computer's fallback loader,
@@ -170,8 +169,6 @@ test_finish() {
 }
 fix_finish() { ln -sfn /etc/systemd/system/ollie-drive-finish.service "$t/etc/systemd/system/multi-user.target.wants/ollie-drive-finish.service"; }
 check "Starting on older computers set to BIOS / Legacy (switched on at the first start)" test_finish fix_finish
-[[ -n ${OLLIE_WINDOWS_BOOT:-} ]] &&
-    check "Windows on the start-up menu (added when the drive starts on a computer with Windows)" test_windows windows_on
 
 # --- 4. Packed for the first start ---------------------------------------------------------------
 # The downloaded packages are not needed any more, and the system's /boot is

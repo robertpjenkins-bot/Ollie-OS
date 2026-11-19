@@ -95,10 +95,6 @@ fix_fstab() { genfstab -U "$t" | sed -E 's/,subvolid=[0-9]+//; s/subvolid=[0-9]+
 check "The drive's parts are found at start-up (fstab)" test_fstab fix_fstab
 
 check "The desktop, and the first start that asks for your name and password" test_first_start fix_first_start
-if [[ -n ${OLLIE_WINDOWS_BOOT:-} ]]; then
-    windows_on
-    check "Windows on the start-up menu (added when the drive starts on a computer with Windows)" test_windows windows_on
-fi
 
 # The downloaded packages are not needed any more: their room goes to Steam
 # and everything you save. (The Fixer downloads what it needs to put back.)
