@@ -16,5 +16,6 @@
     "Ollie-OS-Windows-Boot-Updater-x86_64.AppImage",
     "Ollie-OS-Installer-x86_64.14.AppImage",
     "Ollie-OS-Latest-Updater-x86_64.4.AppImage"
-  ]
+  ],
+  "refreshed": "2026-11-20 birthday background, Wi-Fi fix, Windows removed"
 }
