@@ -4,7 +4,7 @@
 # OS Settings; 23 November until then): its own background (only when the background is one of Ollie
 # OS's, never a picture you chose), a hello from Ollie, the pet's hat, and a
 # party on your birthday. Back to normal afterwards.
-#   ollie-seasons --watch   (at login, /etc/xdg/autostart) checks every hour
+#   ollie-seasons --watch   (at login, /etc/xdg/autostart) checks every half minute
 #   ollie-seasons --now     which season it is: halloween|winter|birthday|none
 # Settings: ~/.config/ollie/seasons (SEASONS=on|off, BIRTHDAY=MM-DD; with no
 # birthday set, 23 November is it, biobro's); the
@@ -28,8 +28,15 @@ season() {
 [[ ${1:-} == --now ]] && { season; exit 0; }
 
 # The desktop's background now, and whether it is one of Ollie OS's.
-current_wallpaper() { grep -h '^Image=' "$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc" 2>/dev/null | head -n 1 | sed 's/^Image=//; s|^file://||'; }
-ollie_wallpaper() { [[ -z $1 || $1 == /usr/share/wallpapers/OllieOS* ]]; }
+current_wallpaper() { grep -h '^Image=' "$HOME/.config/plasma-org.kde.plasma.desktop-appletsrc" 2>/dev/null | sed 's/^Image=//; s|^file://||'; }
+# (Every background the desktop has is Ollie OS's own, or there is none: never a picture you chose.)
+ollie_wallpaper() {
+    local w
+    while IFS= read -r w; do
+        [[ -z $w || $w == /usr/share/wallpapers/OllieOS* ]] || return 1
+    done <<<"$1"
+    return 0
+}
 normal_wallpaper() {
     case "$(sed -n 's/^COLOUR=//p' "$cfg/colours" 2>/dev/null | tail -n 1)" in
     purple) echo /usr/share/wallpapers/OllieOS-Purple ;;
@@ -53,7 +60,7 @@ apply() {
     if ollie_wallpaper "$(current_wallpaper)" && [[ -d $wall ]]; then
         plasma-apply-wallpaperimage "$wall" >/dev/null 2>&1
     fi
-    name="$(getent passwd "$USER" | cut -d: -f5 | cut -d, -f1)"
+    name="$(getent passwd "${USER:-$(id -un)}" | cut -d: -f5 | cut -d, -f1)"
     case $now in
     halloween)
         notify-send -a "Ollie OS" -i ollie-os "Happy Halloween" "Ollie OS is dressed up for Halloween." 2>/dev/null
@@ -69,9 +76,13 @@ apply() {
 
 if [[ ${1:-} == --watch ]]; then
     sleep 20 # (the desktop first)
+    me="$(readlink -f "$0")" stamp="$(stat -c %Y "$me" 2>/dev/null)"
     while :; do
         apply
-        sleep 3600
+        # Every half minute (so a changed clock shows soon), and a newer
+        # Ollie OS update of this script takes over without logging out.
+        sleep 30
+        [[ "$(stat -c %Y "$me" 2>/dev/null)" == "$stamp" ]] || exec "$me" --watch
     done
 fi
 apply
