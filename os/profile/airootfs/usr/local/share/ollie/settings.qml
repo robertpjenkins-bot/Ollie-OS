@@ -172,13 +172,13 @@ ApplicationWindow {
                         ComboBox {
                             id: bMonth
                             model: ["Month", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-                            currentIndex: win.arg("birthday") ? parseInt(win.arg("birthday").split("-")[0]) : 0
+                            currentIndex: win.arg("birthday") ? parseInt(win.arg("birthday").split("-")[0]) : 11
                             onActivated: win.setBirthday()
                         }
                         ComboBox {
                             id: bDay
                             model: ["Day"].concat(Array.from({ length: 31 }, (_, i) => String(i + 1)))
-                            currentIndex: win.arg("birthday") ? parseInt(win.arg("birthday").split("-")[1]) : 0
+                            currentIndex: win.arg("birthday") ? parseInt(win.arg("birthday").split("-")[1]) : 23
                             onActivated: win.setBirthday()
                         }
                     }

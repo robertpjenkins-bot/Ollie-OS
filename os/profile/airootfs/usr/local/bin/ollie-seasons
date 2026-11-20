@@ -1,12 +1,13 @@
 #!/bin/bash
 # Seasonal themes: Ollie OS changes by itself for Halloween (15 to 31
 # October), winter (1 December to 6 January) and your birthday (set in Ollie
-# OS Settings): its own background (only when the background is one of Ollie
+# OS Settings; 23 November until then): its own background (only when the background is one of Ollie
 # OS's, never a picture you chose), a hello from Ollie, the pet's hat, and a
 # party on your birthday. Back to normal afterwards.
 #   ollie-seasons --watch   (at login, /etc/xdg/autostart) checks every hour
 #   ollie-seasons --now     which season it is: halloween|winter|birthday|none
-# Settings: ~/.config/ollie/seasons (SEASONS=on|off, BIRTHDAY=MM-DD); the
+# Settings: ~/.config/ollie/seasons (SEASONS=on|off, BIRTHDAY=MM-DD; with no
+# birthday set, 23 November is it, biobro's); the
 # season shown now: ~/.config/ollie/season-now (the pet and Welcome read it).
 set -uo pipefail
 cfg="$HOME/.config/ollie"
@@ -17,6 +18,7 @@ season() {
     [[ "$(setting SEASONS)" == off ]] && { echo none; return; }
     local md birthday
     md="$(date +%m-%d)" birthday="$(setting BIRTHDAY)"
+    birthday="${birthday:-11-23}"
     if [[ -n $birthday && $md == "$birthday" ]]; then echo birthday
     elif [[ $md > 10-14 && $md < 11-01 ]]; then echo halloween
     elif [[ $md > 11-30 || $md < 01-07 ]]; then echo winter
