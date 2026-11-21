@@ -1,8 +1,9 @@
-name: Edit a release text
+name: Edit release texts
 
-# One time: the release called v1.3 (tag ollieos.6) says 1.6 and talks about
+# One time: the texts and pictures of the releases that were renamed by hand
+# (v1.3, v1.4, v1.7) get the number of their new name, and lose the text about
 # installing Windows, which Ollie OS no longer does. Runs when
-# .github/edit-release.txt is pushed. Only the text changes: not the name, not the files.
+# .github/edit-release.txt is pushed. Only the text changes: not the names, not the files.
 on:
   push:
     branches: ["claude/fervent-gates-cs7smv"]
@@ -16,20 +17,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Edit the text
+      - name: Edit the texts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag=ollieos.6
-          gh release view "$tag" --json body -q .body >body.md
-          python3 - <<'PY'
-          import re
+          fix() { # fix TAG: python edits body.md into body.new.md, then it is put on the release
+            gh release view "$1" --json body -q .body >body.md
+            python3 edit.py "$1"
+            diff body.md body.new.md || true
+            gh release edit "$1" --notes-file body.new.md
+          }
+          cat >edit.py <<'PY'
+          import re, sys
+          tag = sys.argv[1]
           s = open("body.md", newline="").read()
-          s = s.replace("## Ollie OS 1.6", "## Ollie OS 1.3", 1)
-          s = re.sub(r"- \*\*Install Windows too\.\*\*[^\n]*\n", "", s)
-          s = re.sub(r"\n*### Good to know about Windows.*\Z", "\n", s, flags=re.S)
+          if tag == "ollieos.6":      # v1.3
+              s = s.replace("## Ollie OS 1.6", "## Ollie OS 1.3", 1)
+              s = s.replace("docs/ollie-os-banner.png", "docs/ollie-os-banner-1.3.png", 1)
+              s = re.sub(r"- \*\*Install Windows too\.\*\*[^\n]*\n", "", s)
+              s = re.sub(r"\n*### Good to know about Windows.*\Z", "\n", s, flags=re.S)
+          elif tag == "ollieosv1.5":  # v1.4
+              s = s.replace("Ollie OS 1.5 — The Big Fun Update!", "Ollie OS 1.4 — The Big Fun Update!", 1)
+              s = s.replace("docs/ollie-os-showcase.jpg", "docs/ollie-os-showcase-1.4.jpg", 1)
+              s = re.sub(r"- When you install it, it asks if \*\*Windows\*\* should be on the start-up menu too\r?\n", "", s)
+          elif tag == "ollie-update-20261106-0015":  # v1.7
+              s = s.replace("now version 1.5! The Welcome window says Ollie OS 1.5.", "now version 1.7! The Welcome window says Ollie OS 1.7.", 1)
           open("body.new.md", "w", newline="").write(s)
           PY
-          diff body.md body.new.md || true
-          gh release edit "$tag" --notes-file body.new.md
+          for tag in ollieos.6 ollieosv1.5 ollie-update-20261106-0015; do echo "== $tag"; fix "$tag"; done
