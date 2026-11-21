@@ -1,0 +1,46 @@
+name: Order releases
+
+# One time: puts v1.5 and v1.6 on earlier code than v1.7, so GitHub lists the
+# versions in number order (it sorts by the date of the code a release points at).
+# Nothing is deleted until a test release on each commit has worked, and the
+# files of each release are downloaded first. Runs when .github/order-releases.txt
+# is pushed.
+on:
+  push:
+    branches: ["claude/fervent-gates-cs7smv"]
+    paths: [".github/order-releases.txt"]
+
+permissions:
+  contents: write
+
+jobs:
+  order:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Move them
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          pairs=(ollieosv1.5:5b95484306f2c4d64833064718cf5c3d7b4c0c0b ollieos.6:19c50f969117ac73bb8789feaccd89801613fe08)
+          # 1. Can a release be made on these commits at all? (Test ones, then gone.)
+          for p in "${pairs[@]}"; do
+            sha="${p##*:}"
+            gh release create "order-test-${sha:0:7}" --target "$sha" --title test --notes test --latest=false
+            gh release delete "order-test-${sha:0:7}" --cleanup-tag --yes
+          done
+          # 2. Move each: save its files and text, remake it on the earlier code.
+          for p in "${pairs[@]}"; do
+            tag="${p%%:*}" sha="${p##*:}"
+            dir="$(mktemp -d)"
+            title="$(gh release view "$tag" --json name -q .name)"
+            gh release view "$tag" --json body -q .body >"$dir/notes.md"
+            mkdir "$dir/files"
+            gh release download "$tag" --dir "$dir/files"
+            count="$(ls "$dir/files" | wc -l)"
+            echo "$tag: $count files saved"
+            gh release delete "$tag" --cleanup-tag --yes
+            gh release create "$tag" --target "$sha" --title "$title" --notes-file "$dir/notes.md" --latest=false "$dir"/files/*
+            echo "$tag: remade on ${sha:0:7} with $count files"
+          done
