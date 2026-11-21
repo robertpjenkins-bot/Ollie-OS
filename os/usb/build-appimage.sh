@@ -86,6 +86,62 @@ APPRUN
 build_doctor
 
 
+# carry_tools KIT TOOL...: this computer's TOOLs and their libraries into
+# KIT (bin/ the ones to run, libexec/ and lib/), for computers without them.
+carry_tools() {
+    local kit=$1 b lib carried=()
+    shift
+    install -d "$kit/bin" "$kit/libexec" "$kit/lib"
+    for b in "$@"; do
+        install -m 0755 "$(command -v "$b")" "$kit/libexec/$b"
+        carried+=("$(command -v "$b")")
+        while read -r lib; do
+            case "$(basename "$lib")" in libc.so* | libm.so* | ld-linux* | libpthread* | libdl.so* | librt.so*) continue ;; esac
+            cp -nL "$lib" "$kit/lib/"
+            carried+=("$lib")
+        done < <(ldd "$(command -v "$b")" | awk '$3 ~ /^\// {print $3}')
+        printf '#!/bin/sh\nd="$(dirname "$(readlink -f "$0")")"\nLD_LIBRARY_PATH="$d/../lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" exec "$d/../libexec/%s" "$@"\n' "$b" >"$kit/bin/$b"
+        chmod 0755 "$kit/bin/$b"
+    done
+    carry_licences "$kit" "${carried[@]}"
+}
+# The licences of the programs and libraries carried (all free software, many
+# under the GPL, which asks for its licence and the source code to go with
+# them): each package's licence files in KIT/licenses, and in KIT/SOURCES.txt
+# which package and version each file is from and where its source code is.
+carry_licences() { # carry_licences KIT ORIGINAL-FILE...
+    local kit=$1 f real pkg ver src
+    shift
+    install -d "$kit/licenses"
+    for f in /usr/share/common-licenses/{GPL-2,GPL-3,LGPL-2.1,LGPL-3} /usr/share/licenses/common/{GPL2,GPL3,LGPL2.1,LGPL3}/license.txt; do
+        [[ -f $f ]] && install -m 0644 "$f" "$kit/licenses/$(basename "$(dirname "$f")" | sed 's/^common-licenses$//')$(basename "$f")"
+    done
+    {
+        echo "Free software carried by this Ollie OS program, from the computer it was built on."
+        echo "Each one's licence is in licenses/. Its source code: where each line says; or ask at"
+        echo "https://github.com/robertpjenkins-bot/Ollie-OS/issues and you will be sent it (this"
+        echo "offer is good for 3 years from when this program was made: $(date +%Y-%m-%d))."
+        echo "This program itself also contains the AppImage runtime (MIT License,"
+        echo "https://github.com/AppImage/type2-runtime)."
+        echo
+        for f in "$@"; do
+            real="$(readlink -f "$f")"
+            if command -v dpkg >/dev/null && pkg="$(dpkg -S "$real" 2>/dev/null || dpkg -S "${real#/usr}" 2>/dev/null)" && pkg="$(head -n1 <<<"$pkg" | cut -d: -f1)" && [[ -n $pkg ]]; then
+                ver="$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)"
+                src="$(dpkg-query -W -f='${source:Package}' "$pkg" 2>/dev/null)"
+                [[ -f /usr/share/doc/$pkg/copyright ]] && install -D -m 0644 "/usr/share/doc/$pkg/copyright" "$kit/licenses/$pkg/copyright"
+                echo "$(basename "$f"): $pkg $ver; source: https://sources.debian.org/src/${src:-$pkg}/ (or apt-get source ${src:-$pkg}=$ver)"
+            elif command -v pacman >/dev/null && pkg="$(pacman -Qqo "$real" 2>/dev/null)" && [[ -n $pkg ]]; then
+                ver="$(pacman -Q "$pkg" | cut -d' ' -f2)"
+                [[ -d /usr/share/licenses/$pkg ]] && cp -r "/usr/share/licenses/$pkg" "$kit/licenses/"
+                echo "$(basename "$f"): $pkg $ver; source: https://gitlab.archlinux.org/archlinux/packaging/packages/$pkg"
+            else
+                echo "$(basename "$f"): (its package is not known on the build computer; ask for the source as above)"
+            fi
+        done | sort -u
+    } >"$kit/SOURCES.txt"
+}
+
 # The Updater and what it carries: the Ollie OS files changed since the ISO on
 # the release was built (UPDATE_BASE), and xorriso and squashfs-tools with the
 # libraries they need beyond the C library, taken from this (build) computer.
@@ -384,61 +440,6 @@ source_tarball() { # source_tarball OUT.tar.gz
 
 # The Builder: builds the ISO in an Arch Linux container from the recipe it
 # carries, then hands over to USB Maker (or, on a Mac, Mac Setup).
-# carry_tools KIT TOOL...: this computer's TOOLs and their libraries into
-# KIT (bin/ the ones to run, libexec/ and lib/), for computers without them.
-carry_tools() {
-    local kit=$1 b lib carried=()
-    shift
-    install -d "$kit/bin" "$kit/libexec" "$kit/lib"
-    for b in "$@"; do
-        install -m 0755 "$(command -v "$b")" "$kit/libexec/$b"
-        carried+=("$(command -v "$b")")
-        while read -r lib; do
-            case "$(basename "$lib")" in libc.so* | libm.so* | ld-linux* | libpthread* | libdl.so* | librt.so*) continue ;; esac
-            cp -nL "$lib" "$kit/lib/"
-            carried+=("$lib")
-        done < <(ldd "$(command -v "$b")" | awk '$3 ~ /^\// {print $3}')
-        printf '#!/bin/sh\nd="$(dirname "$(readlink -f "$0")")"\nLD_LIBRARY_PATH="$d/../lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" exec "$d/../libexec/%s" "$@"\n' "$b" >"$kit/bin/$b"
-        chmod 0755 "$kit/bin/$b"
-    done
-    carry_licences "$kit" "${carried[@]}"
-}
-# The licences of the programs and libraries carried (all free software, many
-# under the GPL, which asks for its licence and the source code to go with
-# them): each package's licence files in KIT/licenses, and in KIT/SOURCES.txt
-# which package and version each file is from and where its source code is.
-carry_licences() { # carry_licences KIT ORIGINAL-FILE...
-    local kit=$1 f real pkg ver src
-    shift
-    install -d "$kit/licenses"
-    for f in /usr/share/common-licenses/{GPL-2,GPL-3,LGPL-2.1,LGPL-3} /usr/share/licenses/common/{GPL2,GPL3,LGPL2.1,LGPL3}/license.txt; do
-        [[ -f $f ]] && install -m 0644 "$f" "$kit/licenses/$(basename "$(dirname "$f")" | sed 's/^common-licenses$//')$(basename "$f")"
-    done
-    {
-        echo "Free software carried by this Ollie OS program, from the computer it was built on."
-        echo "Each one's licence is in licenses/. Its source code: where each line says; or ask at"
-        echo "https://github.com/robertpjenkins-bot/Ollie-OS/issues and you will be sent it (this"
-        echo "offer is good for 3 years from when this program was made: $(date +%Y-%m-%d))."
-        echo "This program itself also contains the AppImage runtime (MIT License,"
-        echo "https://github.com/AppImage/type2-runtime)."
-        echo
-        for f in "$@"; do
-            real="$(readlink -f "$f")"
-            if command -v dpkg >/dev/null && pkg="$(dpkg -S "$real" 2>/dev/null || dpkg -S "${real#/usr}" 2>/dev/null)" && pkg="$(head -n1 <<<"$pkg" | cut -d: -f1)" && [[ -n $pkg ]]; then
-                ver="$(dpkg-query -W -f='${Version}' "$pkg" 2>/dev/null)"
-                src="$(dpkg-query -W -f='${source:Package}' "$pkg" 2>/dev/null)"
-                [[ -f /usr/share/doc/$pkg/copyright ]] && install -D -m 0644 "/usr/share/doc/$pkg/copyright" "$kit/licenses/$pkg/copyright"
-                echo "$(basename "$f"): $pkg $ver; source: https://sources.debian.org/src/${src:-$pkg}/ (or apt-get source ${src:-$pkg}=$ver)"
-            elif command -v pacman >/dev/null && pkg="$(pacman -Qqo "$real" 2>/dev/null)" && [[ -n $pkg ]]; then
-                ver="$(pacman -Q "$pkg" | cut -d' ' -f2)"
-                [[ -d /usr/share/licenses/$pkg ]] && cp -r "/usr/share/licenses/$pkg" "$kit/licenses/"
-                echo "$(basename "$f"): $pkg $ver; source: https://gitlab.archlinux.org/archlinux/packaging/packages/$pkg"
-            else
-                echo "$(basename "$f"): (its package is not known on the build computer; ask for the source as above)"
-            fi
-        done | sort -u
-    } >"$kit/SOURCES.txt"
-}
 build_builder() {
     local appdir="$out/OllieBuilder.AppDir" mac="$out/Ollie-OS-Builder-Mac"
     rm -rf "$appdir" "$mac"
