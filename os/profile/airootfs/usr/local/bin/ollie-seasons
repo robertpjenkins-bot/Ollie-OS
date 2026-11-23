@@ -46,10 +46,25 @@ normal_wallpaper() {
     esac
 }
 
+# The first start's questions (ollie-first-setup: create a username and
+# password) are still to come or being answered, in the automatic "ollie"
+# session. Same test as that script's: it asks until one of these exists.
+first_start_pending() {
+    local f
+    [[ "$(id -un)" == ollie && -f /etc/sddm.conf.d/20-autologin.conf ]] || return 1
+    for f in /var/lib/ollie/setup-done /run/ollie-bootdir/ollie-account.conf /run/ollie-bootdir/ollie-setup-skipped; do
+        [[ -e $f ]] && return 1
+    done
+    return 0
+}
+
 apply() {
     local now applied wall name
     now="$(season)" applied="$(cat "$cfg/season-now" 2>/dev/null || echo none)"
     [[ $now == "$applied" ]] && return
+    # Not on top of the first start's questions: they come first (the
+    # watcher asks again half a minute later).
+    first_start_pending && return
     echo "$now" >"$cfg/season-now"
     case $now in
     halloween) wall=/usr/share/wallpapers/OllieOS-Halloween ;;

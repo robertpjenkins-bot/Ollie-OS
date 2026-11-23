@@ -11,7 +11,9 @@ ApplicationWindow {
     height: 520
     visible: true
     title: "Happy birthday!"
-    flags: Qt.Window | Qt.WindowStaysOnTopHint
+    // (An ordinary window: it must not stay on top of what opens after it.
+    // Enter, Space or Escape closes it like the button does.)
+    Shortcut { sequences: ["Return", "Enter", "Space", "Escape"]; onActivated: Qt.quit() }
 
     function arg(n) {
         const a = Qt.application.arguments;
