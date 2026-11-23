@@ -1,0 +1,30 @@
+name: Add installers to a release
+
+# One time: puts the three installers (Windows, Mac, Linux / Steam Deck), taken
+# from the newest build, on the release called 1.8. Runs when
+# .github/add-installers.txt is pushed. Nothing else on the release changes.
+on:
+  push:
+    branches: ["claude/fervent-gates-cs7smv"]
+    paths: [".github/add-installers.txt"]
+
+permissions:
+  contents: write
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy the installers over
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir files
+          gh release download ollie-os-newest --dir files \
+            -p 'Ollie-OS-Installer-Windows.exe' -p 'Ollie-OS-Installer-Mac.dmg' -p 'Ollie-OS-Installer-x86_64.AppImage'
+          ls -l files
+          test "$(ls files | wc -l)" = 3
+          gh release upload ollie-update-20261120-1800 files/* --clobber
+          gh release view ollie-update-20261120-1800 --json assets --jq '.assets[] | "\(.name)  \(.size)"'
