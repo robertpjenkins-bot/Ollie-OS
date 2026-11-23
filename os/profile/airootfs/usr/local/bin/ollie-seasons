@@ -47,10 +47,13 @@ normal_wallpaper() {
 }
 
 # The first start's questions (ollie-first-setup: create a username and
-# password) are still to come or being answered, in the automatic "ollie"
-# session. Same test as that script's: it asks until one of these exists.
+# password) are still to come or still open. That script asks until one of
+# the files below exists (same test here, in the automatic "ollie" session),
+# but its last window ("All set") opens after the account is made: so also
+# while the script is running.
 first_start_pending() {
     local f
+    pgrep -u "$UID" -f ollie-first-setup >/dev/null 2>&1 && return 0
     [[ "$(id -un)" == ollie && -f /etc/sddm.conf.d/20-autologin.conf ]] || return 1
     for f in /var/lib/ollie/setup-done /run/ollie-bootdir/ollie-account.conf /run/ollie-bootdir/ollie-setup-skipped; do
         [[ -e $f ]] && return 1
