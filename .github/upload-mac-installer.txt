@@ -1,1 +1,0 @@
-new Mac installer on the 1.8 release (with the drive check)
