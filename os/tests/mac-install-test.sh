@@ -123,11 +123,17 @@ cat >"$stub/dd" <<'EOF'
 args=()
 for a in "$@"; do
     case "$a" in
-    of=/dev/rdisk*) of="$WORK/${a#of=/dev/}.img"; args+=("of=$of") ;;
+    of=/dev/rdisk*) of="$WORK/${a#of=/dev/}.img"; args+=("of=$of" conv=notrunc) ;;
+    if=/dev/rdisk*) in="$WORK/${a#if=/dev/}.img"; [ -f "$in" ] || head -c 1048576 /dev/zero >"$in"; args+=("if=$in") ;;
     bs=4m) args+=(bs=4M) ;;
     *) args+=("$a") ;;
     esac
 done
+if [ -n "${DD_DENY:-}" ]; then
+    echo "dd: /dev/rdisk4: Operation not permitted" >&2
+    echo "dd-denied" >>"$WORK/dd.log"
+    exit 1
+fi
 echo "dd $*" >>"$WORK/dd.log"
 echo $$ >"$WORK/dd.pid"
 trap 'echo "$(wc -c <"$of" 2>/dev/null) bytes transferred in 1.0 secs (1 bytes/sec)" >&2' USR1
@@ -225,7 +231,7 @@ single
 echo "0000000000000000000000000000000000000000000000000000000000000000  $iso_name" >"$work/assets/$iso_name.sha256"
 run 1 ERASE
 check "it says the checksum is wrong" grep -q 'damaged on the way' "$work/out.txt"
-check "nothing was written to the drive" test ! -e "$work/rdisk4.img"
+check "nothing was written to the drive (no write of the ISO)" bash -c "! grep -q 'bs=4m' '$work/dd.log'"
 check "the damaged file was removed" test ! -e "$work/tmp/$iso_name"
 
 say "not typing ERASE changes nothing"
@@ -277,6 +283,24 @@ SLOW=7 run 1 ERASE
 check "it showed a percentage" grep -q '%' "$work/out.txt"
 check "it never asks for the password in the middle (only sudo -n)" bash -c "! grep -E '^sudo pkill' '$work/sudo.log'"
 check "it still wrote the whole ISO" cmp -s "$work/iso" "$work/rdisk4.img"
+
+say "macOS does not let Terminal write to drives yet (Full Disk Access): said before anything is downloaded"
+single
+DD_DENY=1 run 1 ERASE
+check "it says what to switch on" grep -q 'Full Disk Access' "$work/out.txt"
+check "it says nothing was changed" grep -q 'Nothing was changed' "$work/out.txt"
+check "nothing was downloaded" test ! -e "$work/tmp/$iso_name"
+check "nothing was written (no write of the ISO)" bash -c "! grep -q 'bs=4m' '$work/dd.log'"
+
+say "the check of the drive changes nothing on it (it writes back the block it read)"
+single
+head -c 2000000 /dev/urandom >"$work/before.img"
+cp "$work/before.img" "$work/rdisk4.img"
+rm -f "${work:?}/assets/$iso_name"   # (so the download stops after the check)
+run 1 ERASE
+check "the download stopped, as made to" grep -q 'the download stopped' "$work/out.txt"
+check "the check ran first" grep -q 'Checking that this Mac lets Terminal write' "$work/out.txt"
+check "the drive is exactly as it was" cmp -s "$work/before.img" "$work/rdisk4.img"
 
 say "the script has no bash 4 things (macOS has bash 3.2)"
 check "no mapfile / readarray" bash -c "! grep -v '^[[:space:]]*#' '$script' | grep -nE '(^|[^a-z_])(mapfile|readarray)([^a-z_]|\$)'"

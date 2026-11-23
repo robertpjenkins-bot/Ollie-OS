@@ -24,18 +24,21 @@ WHAT HAPPENS
   1. Plug in a USB drive (8 GB or more). EVERYTHING ON IT IS ERASED.
   2. Pick the drive, type ERASE, and type this Mac's password when it asks
      (macOS needs it to write to a drive).
-  3. It downloads Ollie OS (about 2 GB), checks it, and writes it to the drive.
+  3. It checks that macOS lets Terminal write to the drive. If it says macOS
+     is blocking it: System Settings > Privacy & Security > Full Disk Access,
+     turn on Terminal, quit Terminal (Command + Q), open it again, run it again.
+  4. It downloads Ollie OS (about 2 GB), checks it, and writes it to the drive.
      If the internet stops, run it again: it carries on.
-  4. Take the drive to the other computer and start from it:
+  5. Take the drive to the other computer and start from it:
        Steam Deck:     hold Volume Down, press Power, pick the USB drive.
        Steam Machine:  hold Volume Down.
        Dell and most PCs: tap F12.
        Intel Mac:      hold Option and pick "EFI Boot".
      Then press Install Ollie OS.
-  5. PCs with Secure Boot on: the first time, a blue screen says "Verification
+  6. PCs with Secure Boot on: the first time, a blue screen says "Verification
      failed". Press Enter, then any key quickly, then pick Enroll key from disk,
      OLLIE_OS, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.
-  6. A PC with Windows: write down its BitLocker recovery key first
+  7. A PC with Windows: write down its BitLocker recovery key first
      (aka.ms/myrecoverykey). Windows may ask for it after starting from a USB.
      Don't turn Secure Boot off: that makes Windows ask for it for sure.
 

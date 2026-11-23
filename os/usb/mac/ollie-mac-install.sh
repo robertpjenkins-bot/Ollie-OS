@@ -102,10 +102,35 @@ fi
 read -rp "Type ERASE to put Ollie OS on it: " answer
 [ "$answer" = ERASE ] || die "cancelled; nothing was changed."
 
-# --- 3. Download (to this Mac first, checked, then written) --------------------------
+# --- 3. Does macOS let this Terminal write to the drive? (asked before the big download) ---
+# New macOS versions block "dd" to a drive until Terminal has Full Disk Access.
+# The first block of the drive is read and written back, the same: it changes nothing.
+rdisk="${disk/disk/rdisk}"
+mkdir -p "$tmp" || die "could not make a folder for the download."
+ddlog="$tmp/dd.log"
+echo
+echo "==> Writing to a drive needs this Mac's password (the one you log in with)"
+sudo -v || die "that password did not work."
+diskutil unmountDisk force "$disk" >/dev/null || die "the drive could not be closed: quit what has files open on it."
+echo "==> Checking that this Mac lets Terminal write to the drive"
+# (The files are opened by this user, not by sudo: that is on purpose, so no file is root's.)
+# shellcheck disable=SC2024
+if ! { sudo dd if="$rdisk" bs=512 count=1 >"$tmp/block0" 2>"$ddlog" && sudo dd of="$rdisk" bs=512 count=1 <"$tmp/block0" 2>>"$ddlog"; }; then
+    if grep -qi 'not permitted' "$ddlog" 2>/dev/null; then
+        die "macOS is not letting Terminal write to a drive yet. Fix it once:
+  1. Open System Settings > Privacy & Security > Full Disk Access.
+  2. Turn on Terminal (press + and add it from Applications > Utilities if it is not there).
+  3. Quit Terminal (Command + Q), open it again, and run this again.
+Nothing was changed."
+    fi
+    tail -n 3 "$ddlog" 2>/dev/null
+    die "the drive could not be written to (see above). Is it plugged in well? Nothing was changed."
+fi
+echo "  OK."
+
+# --- 4. Download (to this Mac first, checked, then written) --------------------------
 echo
 echo "==> Room on this Mac for the download"
-mkdir -p "$tmp" || die "could not make a folder for the download."
 free_kb="$(df -Pk "$tmp" | awk 'NR == 2 {print $4}')"
 need_kb=$((size / 1024 + 300000))
 [ "${free_kb:-0}" -ge "$need_kb" ] || die "not enough free room on this Mac: the download needs $((need_kb / 1024)) MB, $((${free_kb:-0} / 1024)) MB is free."
@@ -135,16 +160,13 @@ if [ -n "$sumline" ]; then
     echo "  Right."
 fi
 
-# --- 4. Write ---------------------------------------------------------------------------
-echo
-echo "==> Writing to a drive needs this Mac's password (the one you log in with)"
-sudo -v || die "that password did not work."
-diskutil unmountDisk force "$disk" >/dev/null || die "the drive could not be closed: quit what has files open on it."
+# --- 5. Write ---------------------------------------------------------------------------
 echo
 echo "==> Writing Ollie OS to $disk (a few minutes; do not unplug it)"
-ddlog="$tmp/dd.log"
+sudo -v || die "that password did not work."
+diskutil unmountDisk force "$disk" >/dev/null || die "the drive could not be closed: quit what has files open on it."
 : >"$ddlog"
-cat "${files[@]}" | sudo dd of="${disk/disk/rdisk}" bs=4m 2>"$ddlog" &
+cat "${files[@]}" | sudo dd of="$rdisk" bs=4m 2>"$ddlog" &
 wpid=$!
 start=$(date +%s)
 # dd tells how far it is when asked (SIGINFO); asking is harmless if it does not answer.
@@ -165,6 +187,9 @@ rc=$?
 printf '\n'
 if [ "$rc" -ne 0 ]; then
     tail -n 3 "$ddlog" 2>/dev/null
+    if grep -qi 'not permitted' "$ddlog" 2>/dev/null; then
+        die "macOS is not letting Terminal write to a drive: System Settings > Privacy & Security > Full Disk Access > turn on Terminal, quit Terminal (Command + Q), open it again and run this again. The download is kept."
+    fi
     die "writing to the drive stopped (see above). Is it plugged in well? The download is kept: run this again."
 fi
 sync
