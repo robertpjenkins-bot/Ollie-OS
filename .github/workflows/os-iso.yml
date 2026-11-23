@@ -175,7 +175,7 @@ jobs:
             --notes "A great custom version of Arch Linux: comes with Steam, Wine and more, plus a debugger and a driver installer.
 
           **Put Ollie OS on a drive** (download into Downloads):
-          - **Ollie-OS-Installer-Windows.exe** (Windows), **Ollie-OS-Installer-Mac.dmg** (Mac) or **Ollie-OS-Installer-x86_64.AppImage** (Linux, SteamOS): downloads the official Arch Linux ISO, turns it into Ollie OS on your computer (1 to 2 hours), then puts it on a USB drive. No GitHub, no sign-in.
+          - **Ollie-OS-Installer-Windows.exe** (Windows), **Ollie-OS-Installer-Mac.dmg** (Mac) or **Ollie-OS-Installer-x86_64.AppImage** (Linux, SteamOS): downloads the official Arch Linux ISO, turns it into Ollie OS on your computer (1 to 2 hours), then puts it on a USB drive. No GitHub, no sign-in. **The Mac one** (Apple chip M1 to M4 or Intel; also **Ollie-OS-Installer-Mac.zip**) downloads the ready Ollie OS instead and writes it to a USB drive in 10 to 30 minutes. A Mac that won't open it: open Terminal and paste this one line: bash <(curl -fsSL https://raw.githubusercontent.com/robertpjenkins-bot/Ollie-OS/claude/fervent-gates-cs7smv/os/usb/mac/ollie-mac-install.sh)
           - $what: write it to a USB drive with **Ollie-OS-USB-Maker** (Linux, SteamOS) or any ISO writer (balenaEtcher, Rufus), then start the computer from it.
           - **Ollie-OS-Drive-Writer-x86_64.AppImage** (SteamOS, Linux): pick a drive and it installs Ollie OS onto it, no password. Its first start unpacks it (5 to 15 minutes, once).
           - **Ollie-OS-Builder-x86_64.AppImage** (SteamOS, Linux): builds a brand-new Ollie OS ISO on your computer, no password (1 to 2 hours, about 20 GB free). **Ollie-OS-Builder-Windows.exe** does it on Windows, **Ollie-OS-Builder-Mac.dmg** (or .zip) on a Mac.
@@ -199,7 +199,7 @@ jobs:
             Ollie-OS-Stuff-Saver-Updater-x86_64.AppImage Ollie-OS-Drive-Installer-x86_64.AppImage \
             Ollie-OS-Game-Pack-Updater-x86_64.AppImage \
             Ollie-OS-Builder-x86_64.AppImage Ollie-OS-Builder-Mac.zip Ollie-OS-Builder-Mac.dmg Ollie-OS-Builder-Windows.exe \
-            Ollie-OS-Installer-Windows.exe Ollie-OS-Installer-Mac.dmg Ollie-OS-Installer-x86_64.AppImage \
+            Ollie-OS-Installer-Windows.exe Ollie-OS-Installer-Mac.dmg Ollie-OS-Installer-Mac.zip Ollie-OS-Installer-x86_64.AppImage \
             Ollie-OS-Demo-Windows.exe Ollie-OS-Demo-Mac.dmg Ollie-OS-Demo-x86_64.AppImage
 
       - name: Publish a release for os-v* tags

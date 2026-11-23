@@ -23,13 +23,17 @@ Made by biobro (age 8). A gaming computer built on Arch Linux, with Steam, Minec
 
 ### How to install
 1. Download the installer for your computer: **Windows** or **Mac** (both in the zip) or **Linux / Steam Deck** (.AppImage).
-2. Open it. It downloads Arch Linux, turns it into Ollie OS and writes it to a USB drive. No sign-in needed.
+2. Open it. On Windows and Linux it downloads Arch Linux, turns it into Ollie OS (1 to 2 hours) and writes it to a USB drive. On a Mac it downloads the ready Ollie OS and writes it to a USB drive (10 to 30 minutes). No sign-in needed.
 3. Start the computer from the USB drive and press **Install Ollie OS**.
    - Steam Deck: hold Volume Down
    - Dell: tap F12
    - Mac: hold Option
 
-If your Mac won't open the installer, go to System Settings → Privacy & Security and press **Open Anyway**.
+**Mac (Apple chip M1 to M4, or Intel):** the Mac installer makes the USB drive for a Steam Deck or PC (an Apple-chip Mac can't run Ollie OS itself). If your Mac won't open it, open Terminal and paste this one line:
+
+`bash <(curl -fsSL https://raw.githubusercontent.com/robertpjenkins-bot/Ollie-OS/claude/fervent-gates-cs7smv/os/usb/mac/ollie-mac-install.sh)`
+
+Or go to System Settings → Privacy & Security and press **Open Anyway** (if the .dmg won't open at all, use **Ollie-OS-Installer-Mac.zip**).
 
 **Computer with Windows?** Write down its BitLocker recovery key first (aka.ms/myrecoverykey). Windows may ask for it after starting from a USB. With this version you don't need to turn Secure Boot off.
 

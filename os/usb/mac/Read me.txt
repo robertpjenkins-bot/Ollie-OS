@@ -1,15 +1,43 @@
-Ollie OS Installer for Mac
+Ollie OS Installer for Mac   (Apple chip: M1, M2, M3, M4 ... or Intel)
 
-1. Plug in a USB drive (8 GB or more). Everything on it is erased.
-2. Right-click "Ollie OS Installer.command" and choose Open (the first time
-   macOS asks, because it is not from the App Store: click Open).
-3. Pick the drive, type ERASE, then this Mac's password.
-4. When it says Done, start the computer from the USB drive:
-   Intel Mac: hold Option while it starts, pick "EFI Boot".
-   Steam Machine: hold Volume Down.  Dell and most PCs: tap F12.
-5. PCs with Secure Boot on: the first time, a blue screen says "Verification
-   failed". Press Enter, then any key quickly, then pick Enroll key from disk,
-   OLLIE_OS, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.
-6. A PC with Windows: write down its BitLocker recovery key first
-   (aka.ms/myrecoverykey). Windows may ask for it after starting from a USB.
-   Don't turn Secure Boot off: that makes Windows ask for it for sure.
+This makes a USB drive that starts Ollie OS on a Steam Deck, a Steam Machine,
+a Dell or other PC, or an Intel Mac. A Mac with an Apple chip can make the
+drive, but it cannot start Ollie OS itself.
+
+THE EASY WAY (nothing for macOS to block)
+  Open Terminal (press Command + Space, type Terminal, press Return), paste this
+  one line, and press Return:
+
+  bash <(curl -fsSL https://raw.githubusercontent.com/robertpjenkins-bot/Ollie-OS/claude/fervent-gates-cs7smv/os/usb/mac/ollie-mac-install.sh)
+
+OR DOUBLE-CLICK
+  Double-click "Ollie OS Installer.command". macOS may say it "can't be opened"
+  or "Apple could not verify" it, because it is not from the App Store. Then:
+    1. Click Done (not Move to Bin).
+    2. Open System Settings > Privacy & Security.
+    3. Scroll down to the message about "Ollie OS Installer.command" and click
+       Open Anyway, then type this Mac's password.
+    4. Double-click it again and click Open.
+  (macOS 14 and older: right-click it and choose Open instead.)
+
+WHAT HAPPENS
+  1. Plug in a USB drive (8 GB or more). EVERYTHING ON IT IS ERASED.
+  2. Pick the drive, type ERASE, and type this Mac's password when it asks
+     (macOS needs it to write to a drive).
+  3. It downloads Ollie OS (about 2 GB), checks it, and writes it to the drive.
+     If the internet stops, run it again: it carries on.
+  4. Take the drive to the other computer and start from it:
+       Steam Deck:     hold Volume Down, press Power, pick the USB drive.
+       Steam Machine:  hold Volume Down.
+       Dell and most PCs: tap F12.
+       Intel Mac:      hold Option and pick "EFI Boot".
+     Then press Install Ollie OS.
+  5. PCs with Secure Boot on: the first time, a blue screen says "Verification
+     failed". Press Enter, then any key quickly, then pick Enroll key from disk,
+     OLLIE_OS, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.
+  6. A PC with Windows: write down its BitLocker recovery key first
+     (aka.ms/myrecoverykey). Windows may ask for it after starting from a USB.
+     Don't turn Secure Boot off: that makes Windows ask for it for sure.
+
+If the Mac says "The disk you inserted was not readable by this computer" when
+the drive is done, click Eject: that is Ollie OS, which a Mac cannot read.

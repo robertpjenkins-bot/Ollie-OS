@@ -42,13 +42,22 @@ playing, making and learning.
 1. **Get the Installer** from the [Releases page](../../releases): Windows
    (`.exe`, inside the zip), Mac (`.dmg`, inside the zip), or Linux and Steam
    Deck (`.AppImage`).
-2. **Run it.** It downloads the official Arch Linux ISO and turns it into
-   Ollie OS on your computer. It takes 1 to 2 hours and about 20 GB of free
-   space. No GitHub account or sign-in needed.
+2. **Run it.** On Windows and Linux it downloads the official Arch Linux ISO
+   and turns it into Ollie OS on your computer (1 to 2 hours, about 20 GB of
+   free space). On a Mac it downloads the ready Ollie OS and writes it to a
+   USB drive (about 2 GB, 10 to 30 minutes). No GitHub account or sign-in needed.
 3. **Put it on a USB stick** (it asks at the end), then start the computer
    from the stick: Steam Deck and Steam Machine, hold **Volume Down**; Dell,
    tap **F12**; Mac, hold **Option**. Try it out, and if you like it, open
    **Install Ollie OS** on its desktop.
+
+**On a Mac (Apple chip M1 to M4, or Intel)?** The Mac installer makes the USB
+drive for a Steam Deck, Steam Machine or PC (a Mac with an Apple chip cannot run
+Ollie OS itself). If macOS will not open the download, open Terminal and paste:
+
+```
+bash <(curl -fsSL https://raw.githubusercontent.com/robertpjenkins-bot/Ollie-OS/claude/fervent-gates-cs7smv/os/usb/mac/ollie-mac-install.sh)
+```
 
 **Already have Ollie OS?** Download the **Ollie OS Latest Updater** and open it:
 it brings everything new, then Update Ollie OS gets the rest. Later versions
@@ -67,7 +76,7 @@ file.
 **What computers does it work on?** 64-bit PCs and laptops with Intel or AMD
 chips (new ones and older BIOS ones), Intel Macs, and the Steam Deck and
 Steam Machine. It doesn't work on phones, tablets, Chromebooks with ARM
-chips, or Macs with Apple chips (M1 and newer).
+chips, or Macs with Apple chips (M1 and newer); those Macs can still make the USB drive.
 
 **What do I need?** A USB stick of 32 GB or more, and to install it, a drive
 with at least 25 GB.

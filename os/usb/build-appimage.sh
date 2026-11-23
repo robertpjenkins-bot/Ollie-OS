@@ -18,6 +18,7 @@
 #   Ollie-OS-Fun-Pack-Updater-x86_64.AppImage    adds Games (drop in ROMs and ISOs), Ollie Finder, Typing Game, Ollie Pet
 #   Ollie-OS-Builder-x86_64.AppImage        builds a brand-new ISO on the computer
 #   Ollie-OS-Builder-Mac.zip                the same for a Mac (with Mac Setup); and as .dmg
+#   Ollie-OS-Installer-Mac.dmg / .zip       makes a USB drive from a Mac, Apple Silicon too (no Docker)
 # (Ollie-OS-Builder-Windows.exe, for Windows: os/windows/builder/build.sh.)
 set -euo pipefail
 
@@ -474,11 +475,32 @@ APPRUN
     if command -v xorriso >/dev/null; then
         rm -f "$out/Ollie-OS-Builder-Mac.dmg"
         xorriso -as mkisofs -quiet -V "Ollie OS Builder" -R -J -hfsplus -o "$out/Ollie-OS-Builder-Mac.dmg" "$mac"
-        cp -f "$out/Ollie-OS-Builder-Mac.dmg" "$out/Ollie-OS-Installer-Mac.dmg"
     fi
     rm -rf "$mac"
 }
 build_builder
+
+# The Mac Installer (not the Builder: that one needs Docker and an Intel Mac).
+# It runs on any Mac, Apple Silicon (M1 to M4) too, with only what macOS has:
+# it downloads the ready-made Ollie OS from the newest release and writes it to
+# a USB drive. As a .dmg (opens on a Mac like a drive) and as a .zip (opens by
+# double-clicking, for when the .dmg will not). The same script is the Terminal
+# one-liner on the website (nothing for macOS's Gatekeeper to block).
+build_mac_installer() {
+    local dir="$out/Ollie-OS-Installer-Mac"
+    rm -rf "${dir:?}"
+    mkdir -p "$dir"
+    install -m 0755 "$here/mac/ollie-mac-install.sh" "$dir/Ollie OS Installer.command"
+    install -m 0644 "$here/mac/Read me.txt" "$dir/Read me.txt"
+    rm -f "$out/Ollie-OS-Installer-Mac.zip"
+    (cd "$out" && zip -q -r -X Ollie-OS-Installer-Mac.zip "$(basename "$dir")")
+    if command -v xorriso >/dev/null; then
+        rm -f "$out/Ollie-OS-Installer-Mac.dmg"
+        xorriso -as mkisofs -quiet -V "Ollie OS Installer" -R -J -hfsplus -o "$out/Ollie-OS-Installer-Mac.dmg" "$dir"
+    fi
+    rm -rf "${dir:?}"
+}
+build_mac_installer
 
 # The Drive Writer, for SteamOS or any Linux: makes Ollie OS from Arch Linux
 # right on a drive, with the recipe it carries (no GitHub, no ISO).

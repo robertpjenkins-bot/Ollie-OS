@@ -80,7 +80,10 @@ chroot_tools=true
 for tool in curl unshare chroot sha256sum; do have "$tool" || chroot_tools=false; done
 [ -n "$(tool_path unsquashfs)" ] && { have bsdtar || [ -n "$(tool_path xorriso)" ]; } || chroot_tools=false
 if $mac; then
-    [ "$(uname -m)" = x86_64 ] || echo "  (This Mac is not an Intel Mac: the build runs emulated and takes much longer.)"
+    if [ "$(uname -m)" != x86_64 ]; then
+        echo "  (This Mac has an Apple chip: the build runs emulated, takes much longer, and may not work.)"
+        echo "  (Quicker: Ollie OS Installer.command makes the USB drive from the ready-made Ollie OS in a few minutes.)"
+    fi
     have docker || die "Docker is not installed. Install Docker Desktop from docker.com (or OrbStack), open it once so it is running, then run this again."
     docker info >/dev/null 2>&1 || die "Docker is installed but not running. Open Docker Desktop (whale icon at the top of the screen), wait until it says running, then run this again."
     engine=(docker)
