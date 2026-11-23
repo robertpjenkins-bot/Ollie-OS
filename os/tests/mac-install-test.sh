@@ -54,7 +54,11 @@ while [ $# -gt 0 ]; do
     shift
 done
 echo "curl $url" >>"$WORK/curl.log"
-if [ "$url" = "$WORK/api.json" ] || [[ $url == *api.github.com* ]]; then cat "$WORK/api.json"; exit 0; fi
+[ -n "${OFFLINE:-}" ] && exit 6
+case "$url" in
+"$WORK/api.json" | "$WORK/list.json") [ -f "$url" ] && { cat "$url"; exit 0; }; exit 22 ;;
+esac
+if [[ $url == *api.github.com* ]]; then cat "$WORK/api.json"; exit 0; fi
 name="${url##*/}"
 f="$WORK/assets/$name"
 [ -f "$f" ] || exit 22
@@ -149,25 +153,44 @@ EOF
 chmod +x "$stub"/*
 
 # --- Fake release ------------------------------------------------------------------
-make_json() { # make_json NAME:SIZE ...  (GitHub's answer: one key per line)
-    python3 - "$@" <<'PY'
+release_py='
 import json, sys
-assets = []
-for a in sys.argv[1:]:
-    n, s = a.rsplit(":", 1)
-    assets.append({"url": "https://api.github.com/x", "id": 1, "name": n, "label": "",
-                   "uploader": {"login": "github-actions[bot]", "id": 2},
-                   "content_type": "application/octet-stream", "state": "uploaded", "size": int(s),
-                   "download_count": 0, "browser_download_url": "https://dl.test/" + n})
-print(json.dumps({"tag_name": "ollie-os-newest", "name": "Ollie OS (2026-11-21)", "assets": assets}, indent=2))
+def release(tag, files):
+    assets = []
+    for a in files:
+        n, sz = a.rsplit(":", 1)
+        assets.append({"url": "https://api.github.com/x", "id": 1, "name": n, "label": "",
+                       "uploader": {"login": "github-actions[bot]", "id": 2},
+                       "content_type": "application/octet-stream", "state": "uploaded", "size": int(sz),
+                       "download_count": 0, "browser_download_url": "https://dl.test/releases/download/" + tag + "/" + n})
+    return {"tag_name": tag, "name": "Ollie OS (" + tag + ")", "draft": False, "assets": assets}
+'
+make_json() { # make_json NAME:SIZE ...  (GitHub's answer for ollie-os-newest: one key per line)
+    python3 - "$@" <<PY
+$release_py
+print(json.dumps(release("ollie-os-newest", sys.argv[1:]), indent=2))
 PY
 }
-head -c 3000000 /dev/urandom >"$work/iso"
+make_list() { # make_list TAG=NAME:SIZE,NAME:SIZE ...  (GitHub's list of releases, newest first)
+    python3 - "$@" <<PY
+$release_py
+out = []
+for a in sys.argv[1:]:
+    tag, files = a.split("=", 1)
+    out.append(release(tag, files.split(",")))
+print(json.dumps(out, indent=2))
+PY
+}
+iso_file() { # iso_file PATH BYTES: a file that looks like an ISO
+    head -c "$2" /dev/urandom >"$1"
+    printf CD001 | /bin/dd of="$1" bs=1 seek=32769 conv=notrunc 2>/dev/null
+}
+iso_file "$work/iso" 3000000
 export WORK="$work"
 reset_assets() {
-    rm -rf "${work:?}/assets" "${work:?}/tmp" "${work:?}/dd.pid"
-    rm -f "${work:?}"/rdisk*.img "${work:?}"/*.log
-    mkdir -p "$work/assets"
+    rm -rf "${work:?}/assets" "${work:?}/tmp" "${work:?}/dl" "${work:?}/dd.pid"
+    rm -f "${work:?}"/rdisk*.img "${work:?}"/*.log "${work:?}/list.json"
+    mkdir -p "$work/assets" "$work/dl"
 }
 iso_name=ollie-os-2026.11.21-x86_64.iso
 single() {
@@ -183,7 +206,7 @@ parts() {
     make_json "$iso_name.part1:1300000" "$iso_name.part0:1700000" "$iso_name.sha256:97" >"$work/api.json"
 }
 run() { # run ANSWERS... : the script, answering its questions in turn
-    printf '%s\n' "$@" "" "" | PATH="$stub:$PATH" OLLIE_MAC_TEST=1 OLLIE_MAC_API="$work/api.json" OLLIE_MAC_TMP="$work/tmp" bash "$script" >"$work/out.txt" 2>&1
+    printf '%s\n' "$@" "" "" | PATH="$stub:$PATH" OLLIE_MAC_TEST=1 OLLIE_MAC_API="$work/api.json" OLLIE_MAC_LIST_API="$work/list.json" OLLIE_MAC_TMP="$work/tmp" OLLIE_MAC_DOWNLOADS="${DL:-$work/dl}" OLLIE_MAC_MIN_ISO=1000000 bash "$script" >"$work/out.txt" 2>&1
 }
 
 say "one ISO file: found, downloaded, checked and written to the drive"
@@ -194,7 +217,11 @@ check "the drive got exactly the ISO" cmp -s "$work/iso" "$work/rdisk4.img"
 check "it says the Apple chip is fine" grep -q 'Apple chip' "$work/out.txt"
 check "the drive was closed first and ejected after" bash -c "grep -q 'unmountDisk force /dev/disk4' '$work/diskutil.log' && grep -q 'eject /dev/disk4' '$work/diskutil.log'"
 check "it wrote to the raw device with 4 MB blocks" grep -q 'of=/dev/rdisk4 bs=4m' "$work/dd.log"
-check "the download folder is gone" test ! -d "$work/tmp"
+check "the scratch folder is gone" test ! -d "$work/tmp"
+check "the ISO stays in Downloads" cmp -s "$work/iso" "$work/dl/$iso_name"
+check "with its checksum file beside it" grep -q "^$(sha256sum "$work/iso" | cut -d' ' -f1)  $iso_name\$" "$work/dl/$iso_name.sha256"
+check "it says the file stays in Downloads" grep -q 'stays in your Downloads folder' "$work/out.txt"
+check "no half download left behind" bash -c "! ls '$work'/dl/*.part >/dev/null 2>&1"
 check "the Installer .dmg in the release is not taken for the ISO" bash -c "! grep -q 'Installer-Mac' '$work/curl.log'"
 
 say "the answer from GitHub read without osascript (a plain text way)"
@@ -212,17 +239,16 @@ check "the drive has the whole ISO" cmp -s "$work/iso" "$work/rdisk4.img"
 
 say "a download that stopped half way carries on"
 single
-mkdir -p "$work/tmp"
-head -c 1000000 "$work/iso" >"$work/tmp/$iso_name"
+head -c 1000000 "$work/iso" >"$work/dl/$iso_name.part"
 run 1 ERASE
 check "it resumed from where it was" grep -q 'resume from 1000000' "$work/curl.log"
 check "and the drive has the ISO" cmp -s "$work/iso" "$work/rdisk4.img"
 
-say "a file that is already whole is not downloaded again"
+say "Ollie OS already in Downloads (the newest one): not downloaded again"
 single
-mkdir -p "$work/tmp"
-cp "$work/iso" "$work/tmp/$iso_name"
+cp "$work/iso" "$work/dl/$iso_name"
 run 1 ERASE
+check "it says it is the newest" grep -q 'it is the newest Ollie OS' "$work/out.txt"
 check "the ISO itself was not fetched" bash -c "! grep -q 'dl.test/$iso_name\$' '$work/curl.log'"
 check "the drive has the ISO" cmp -s "$work/iso" "$work/rdisk4.img"
 
@@ -232,14 +258,14 @@ echo "0000000000000000000000000000000000000000000000000000000000000000  $iso_nam
 run 1 ERASE
 check "it says the checksum is wrong" grep -q 'damaged on the way' "$work/out.txt"
 check "nothing was written to the drive (no write of the ISO)" bash -c "! grep -q 'bs=4m' '$work/dd.log'"
-check "the damaged file was removed" test ! -e "$work/tmp/$iso_name"
+check "the damaged file was removed" bash -c "test ! -e '$work/dl/$iso_name.part' && test ! -e '$work/dl/$iso_name'"
 
 say "not typing ERASE changes nothing"
 single
 run 1 nope
 check "cancelled" grep -q 'cancelled; nothing was changed' "$work/out.txt"
 check "nothing written" test ! -e "$work/rdisk4.img"
-check "nothing downloaded" test ! -e "$work/tmp/$iso_name"
+check "nothing downloaded" bash -c "test ! -e '$work/dl/$iso_name' && test ! -e '$work/dl/$iso_name.part'"
 
 say "a big storage drive (4.5 TB) must be named as well; the wrong name changes nothing"
 single
@@ -270,7 +296,7 @@ say "no ISO in the release yet"
 reset_assets
 make_json "Ollie-OS-Installer-Mac.dmg:100" >"$work/api.json"
 run 1 ERASE
-check "it says to try later" grep -q 'has no ISO in it yet' "$work/out.txt"
+check "it says to try later" grep -q 'no Ollie OS file was found on GitHub yet' "$work/out.txt"
 
 say "the password does not work"
 single
@@ -289,7 +315,7 @@ single
 DD_DENY=1 run 1 ERASE
 check "it says what to switch on" grep -q 'Full Disk Access' "$work/out.txt"
 check "it says nothing was changed" grep -q 'Nothing was changed' "$work/out.txt"
-check "nothing was downloaded" test ! -e "$work/tmp/$iso_name"
+check "nothing was downloaded" bash -c "test ! -e '$work/dl/$iso_name' && test ! -e '$work/dl/$iso_name.part'"
 check "nothing was written (no write of the ISO)" bash -c "! grep -q 'bs=4m' '$work/dd.log'"
 
 say "the check of the drive changes nothing on it (it writes back the block it read)"
@@ -301,6 +327,97 @@ run 1 ERASE
 check "the download stopped, as made to" grep -q 'the download stopped' "$work/out.txt"
 check "the check ran first" grep -q 'Checking that this Mac lets Terminal write' "$work/out.txt"
 check "the drive is exactly as it was" cmp -s "$work/before.img" "$work/rdisk4.img"
+
+say "Ollie OS already in Downloads, but an older one: asked; Return uses the one in Downloads"
+single
+iso_file "$work/older" 3100000
+cp "$work/older" "$work/dl/ollie-os-2026.11.19-x86_64.iso"
+(cd "$work/dl" && sha256sum ollie-os-2026.11.19-x86_64.iso >ollie-os-2026.11.19-x86_64.iso.sha256)
+run "" 1 ERASE
+check "it says the newest is a different one" grep -q 'newest Ollie OS on GitHub is a different one' "$work/out.txt"
+check "the drive has the one from Downloads" cmp -s "$work/older" "$work/rdisk4.img"
+check "the newest was not downloaded" bash -c "! grep -q 'dl.test/releases/download/ollie-os-newest/$iso_name\$' '$work/curl.log'"
+
+say "the same, answering n: the newest is downloaded (the old one is left alone)"
+single
+cp "$work/older" "$work/dl/ollie-os-2026.11.19-x86_64.iso"
+run n 1 ERASE
+check "the drive has the newest" cmp -s "$work/iso" "$work/rdisk4.img"
+check "the older one is still in Downloads" cmp -s "$work/older" "$work/dl/ollie-os-2026.11.19-x86_64.iso"
+check "and the newest is there too" cmp -s "$work/iso" "$work/dl/$iso_name"
+
+say "no internet, Ollie OS in Downloads: it is used (needs no internet at all)"
+single
+cp "$work/iso" "$work/dl/$iso_name"
+OFFLINE=1 run 1 ERASE
+check "it says GitHub could not be asked" grep -q 'GitHub could not be asked' "$work/out.txt"
+check "the drive has the ISO" cmp -s "$work/iso" "$work/rdisk4.img"
+
+say "no internet and nothing in Downloads: it says where to put the file"
+single
+OFFLINE=1 run 1 ERASE
+check "it says GitHub cannot be reached" grep -q 'could not reach GitHub' "$work/out.txt"
+check "and that the file can be put in Downloads" grep -q 'in your Downloads folder first' "$work/out.txt"
+
+say "the file in Downloads does not match its checksum file: not used, the newest is downloaded"
+single
+cp "$work/older" "$work/dl/ollie-os-2026.11.19-x86_64.iso"
+echo "0000000000000000000000000000000000000000000000000000000000000000  ollie-os-2026.11.19-x86_64.iso" >"$work/dl/ollie-os-2026.11.19-x86_64.iso.sha256"
+run 1 ERASE
+check "it says it is damaged" grep -q 'does not match its checksum file' "$work/out.txt"
+check "the drive has the newest" cmp -s "$work/iso" "$work/rdisk4.img"
+check "the damaged one was not deleted" test -f "$work/dl/ollie-os-2026.11.19-x86_64.iso"
+
+say "a file called ollie-os-...iso that is no ISO (no CD001) is not taken for one"
+single
+head -c 3000000 /dev/urandom >"$work/dl/ollie-os-2026.11.22-x86_64.iso"
+run 1 ERASE
+check "the drive has the newest from GitHub" cmp -s "$work/iso" "$work/rdisk4.img"
+check "it did not say it found Ollie OS in Downloads" bash -c "! grep -q 'already in Downloads' '$work/out.txt'"
+
+say "the parts of an ISO already in Downloads are used (all of them)"
+parts
+split -b 1700000 -d -a 1 "$work/iso" "$work/dl/$iso_name.part"
+cp "$work/assets/$iso_name.sha256" "$work/dl/"
+run 1 ERASE
+check "it found them" grep -q 'already in Downloads' "$work/out.txt"
+check "nothing was downloaded" bash -c "! grep -q 'dl.test/releases/download/ollie-os-newest/$iso_name.part' '$work/curl.log'"
+check "the drive has the whole ISO" cmp -s "$work/iso" "$work/rdisk4.img"
+
+say "only the first part in Downloads: not whole, so not used"
+parts
+split -b 1700000 -d -a 1 "$work/iso" "$work/dl/$iso_name.part"
+rm -f "$work/dl/$iso_name.part1"
+run 1 ERASE
+check "it did not use the half" bash -c "! grep -q 'already in Downloads' '$work/out.txt'"
+check "the drive has the whole ISO from GitHub" cmp -s "$work/iso" "$work/rdisk4.img"
+
+say "the release called ollie-os-newest is gone: the newest release with an ISO in it is used"
+reset_assets
+cp "$work/iso" "$work/assets/$iso_name"
+(cd "$work/assets" && sha256sum "$iso_name" >"$iso_name.sha256")
+rm -f "$work/api.json"
+make_list "ollieosv1.9=$iso_name:3000000,$iso_name.sha256:97,Ollie-OS-Installer-Mac.dmg:100" "ollie-update-20261120-1800=Ollie-OS-Latest-Updater-x86_64.AppImage:100" "ollieosv1.7=old.iso:5" >"$work/list.json"
+run 1 ERASE
+check "it finishes" grep -q 'Done: Ollie OS is on the USB drive' "$work/out.txt"
+check "the drive has the ISO" cmp -s "$work/iso" "$work/rdisk4.img"
+check "it asked for the list of releases" grep -q 'releases?per_page\|list.json' "$work/curl.log"
+
+say "the same list, read without osascript (the plain text way picks the first release that has an ISO)"
+reset_assets
+cp "$work/iso" "$work/assets/$iso_name"
+(cd "$work/assets" && sha256sum "$iso_name" >"$iso_name.sha256")
+make_list "ollie-update-20261123-0900=Ollie-OS-Latest-Updater-x86_64.AppImage:100" "ollieosv1.9=$iso_name:3000000,$iso_name.sha256:97" "ollieosv1.8=ollie-os-2026.11.01-x86_64.iso:3000000" >"$work/list.json"
+FAIL_OSASCRIPT=1 run 1 ERASE
+check "the drive has the newest ISO (not the old one in the older release)" cmp -s "$work/iso" "$work/rdisk4.img"
+
+say "Downloads is not open to Terminal: the download goes to the temporary folder and is removed"
+single
+DL=/proc/no-such-folder/Downloads run 1 ERASE
+check "it finishes" grep -q 'Done: Ollie OS is on the USB drive' "$work/out.txt"
+check "the drive has the ISO" cmp -s "$work/iso" "$work/rdisk4.img"
+check "nothing is left in the temporary folder" test ! -e "$work/tmp"
+check "it does not say the file stays in Downloads" bash -c "! grep -q 'stays in your Downloads folder' '$work/out.txt'"
 
 say "the script has no bash 4 things (macOS has bash 3.2)"
 check "no mapfile / readarray" bash -c "! grep -v '^[[:space:]]*#' '$script' | grep -nE '(^|[^a-z_])(mapfile|readarray)([^a-z_]|\$)'"

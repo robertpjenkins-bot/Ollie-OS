@@ -27,6 +27,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -85,6 +86,23 @@ func build() error {
 	home, _ := os.UserHomeDir()
 	work := filepath.Join(home, "Ollie-OS-Builder")
 	downloads := filepath.Join(home, "Downloads")
+
+	// --- Ollie OS already on this PC? Then there is nothing to build ---
+	// A finished Ollie OS ISO (ollie-os-...iso, what the Builder leaves in
+	// Downloads) is looked for first: in Downloads, on the Desktop, in the
+	// home folder and next to this program.
+	if iso := findOllie(home, downloads, work); iso != "" {
+		var mb int64
+		if fi, err := os.Stat(iso); err == nil {
+			mb = fi.Size() / 1_000_000
+		}
+		fmt.Printf("  Ollie OS is already on this PC: %s (%d MB)\n\n", iso, mb)
+		if a := strings.ToLower(ask("Use it (no 1 to 2 hour build)? [Y/n] (n: build a new one) ")); a != "n" && a != "no" {
+			return offerUSB(iso)
+		}
+		fmt.Println()
+	}
+
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return err
 	}
@@ -200,6 +218,12 @@ echo "OLLIE-ISO $(basename "$iso")"`
 	fmt.Println("  Done! The new Ollie OS is in Downloads: " + iso)
 	fmt.Println("  (To free its 20 GB later: wsl --unregister " + distro + ")")
 	fmt.Println()
+	return offerUSB(path)
+}
+
+// offerUSB asks whether to write the ISO to a drive now, and starts the
+// writing (as administrator, which writing to a drive needs).
+func offerUSB(path string) error {
 	write := false
 	for {
 		a := strings.ToLower(ask("Ollie OS is ready! Do you want to write it to a drive now? [y/n] "))
@@ -208,7 +232,7 @@ echo "OLLIE-ISO $(basename "$iso")"`
 			break
 		}
 		if strings.HasPrefix(a, "n") {
-			fmt.Println("  OK! Not written to a drive. The ISO stays in Downloads.")
+			fmt.Println("  OK! Not written to a drive. The ISO stays here: " + path)
 			break
 		}
 	}
@@ -221,6 +245,83 @@ echo "OLLIE-ISO $(basename "$iso")"`
 		}
 	}
 	return nil
+}
+
+// minOllieISO: a real Ollie OS ISO is at least this big (about 2 GB).
+var minOllieISO int64 = 1_000_000_000
+
+// findOllie: the newest finished Ollie OS ISO already on this PC
+// (ollie-os-*.iso), or "". A real one is at least 1 GB, has "CD001" where
+// every ISO has it, and matches its .sha256 file, if it has one beside it.
+func findOllie(home, downloads, work string) string {
+	dirs := []string{downloads, filepath.Join(home, "Desktop"), home, work}
+	if exe, err := os.Executable(); err == nil {
+		dirs = append(dirs, filepath.Dir(exe))
+	}
+	type found struct {
+		path string
+		mod  time.Time
+	}
+	var list []found
+	seen := map[string]bool{}
+	for _, d := range dirs {
+		matches, _ := filepath.Glob(filepath.Join(d, "ollie-os-*.iso"))
+		for _, m := range matches {
+			if seen[m] {
+				continue
+			}
+			seen[m] = true
+			fi, err := os.Stat(m)
+			if err != nil || fi.IsDir() || fi.Size() < minOllieISO || !looksLikeISO(m) {
+				continue
+			}
+			list = append(list, found{m, fi.ModTime()})
+		}
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].mod.After(list[j].mod) })
+	for _, f := range list {
+		if sumMatches(f.path) {
+			return f.path
+		}
+	}
+	return ""
+}
+
+// looksLikeISO: the "CD001" mark of an ISO 9660 file, at byte 32769.
+func looksLikeISO(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	mark := make([]byte, 5)
+	if _, err := f.ReadAt(mark, 32769); err != nil {
+		return false
+	}
+	return string(mark) == "CD001"
+}
+
+// sumMatches: the ISO is whole: it matches the checksum in the .sha256 file
+// beside it (or has no such file, so it cannot be checked).
+func sumMatches(path string) bool {
+	b, err := os.ReadFile(path + ".sha256")
+	if err != nil {
+		return true
+	}
+	fl := strings.Fields(string(b))
+	if len(fl) == 0 {
+		return true
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return false
+	}
+	return hex.EncodeToString(h.Sum(nil)) == strings.ToLower(fl[0])
 }
 
 // downloadFirst saves the first of urls that downloads whole.

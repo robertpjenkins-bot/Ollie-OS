@@ -20,6 +20,12 @@ OR DOUBLE-CLICK
     4. Double-click it again and click Open.
   (macOS 14 and older: right-click it and choose Open instead.)
 
+OLLIE OS ALREADY IN DOWNLOADS?
+  This looks in your Downloads folder for the Ollie OS file (ollie-os-...iso) first.
+  If it is there, there is no second download: it is checked and written to the
+  drive. When it does download, the file stays in Downloads for next time. (macOS
+  may ask whether Terminal may use the Downloads folder: click Allow.)
+
 WHAT HAPPENS
   1. Plug in a USB drive (8 GB or more). EVERYTHING ON IT IS ERASED.
   2. Pick the drive, type ERASE, and type this Mac's password when it asks
@@ -27,8 +33,8 @@ WHAT HAPPENS
   3. It checks that macOS lets Terminal write to the drive. If it says macOS
      is blocking it: System Settings > Privacy & Security > Full Disk Access,
      turn on Terminal, quit Terminal (Command + Q), open it again, run it again.
-  4. It downloads Ollie OS (about 2 GB), checks it, and writes it to the drive.
-     If the internet stops, run it again: it carries on.
+  4. It uses the Ollie OS file in Downloads, or downloads it (about 2 GB), checks it,
+     and writes it to the drive. If the internet stops, run it again: it carries on.
   5. Take the drive to the other computer and start from it:
        Steam Deck:     hold Volume Down, press Power, pick the USB drive.
        Steam Machine:  hold Volume Down.

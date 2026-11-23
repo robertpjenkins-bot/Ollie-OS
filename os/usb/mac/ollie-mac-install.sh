@@ -1,8 +1,10 @@
 #!/bin/bash
 # Ollie OS Installer for a Mac (Apple Silicon: M1, M2, M3, M4 ... and Intel):
-# downloads the newest Ollie OS from its GitHub release and writes it onto a
-# USB drive. Start the Steam Deck, Steam Machine, a Dell or another PC (or an
-# Intel Mac, holding Option) from that drive to get Ollie OS. The drive is erased.
+# puts Ollie OS on a USB drive. It looks in the Downloads folder for the Ollie OS
+# ISO first (no second download); if it is not there, it downloads the newest
+# one from GitHub into Downloads and keeps it there. Start the Steam Deck, Steam
+# Machine, a Dell or another PC (or an Intel Mac, holding Option) from that
+# drive to get Ollie OS. The drive is erased.
 #
 # A Mac with an Apple chip cannot start Ollie OS itself; it only makes the
 # drive for another computer. Nothing here needs Docker, Rosetta or Xcode: it
@@ -18,9 +20,14 @@
 # is an error there), no mapfile, no ${x,,}.
 set -o pipefail
 REPO="${OLLIE_MAC_REPO:-robertpjenkins-bot/Ollie-OS}" TAG="${OLLIE_MAC_TAG:-ollie-os-newest}"
+# The release called ollie-os-newest first; if it is not there (or has no ISO),
+# the newest of all the releases that has an Ollie OS ISO in it.
 API="${OLLIE_MAC_API:-https://api.github.com/repos/$REPO/releases/tags/$TAG}"
+LIST_API="${OLLIE_MAC_LIST_API:-https://api.github.com/repos/$REPO/releases?per_page=30}"
 bold=$'\e[1m' red=$'\e[31m' green=$'\e[32m' reset=$'\e[0m'
 tmp="${OLLIE_MAC_TMP:-${TMPDIR:-/tmp}/ollie-os-installer}"
+dl="${OLLIE_MAC_DOWNLOADS:-$HOME/Downloads}"
+min_iso="${OLLIE_MAC_MIN_ISO:-1000000000}"
 
 die() {
     printf '\n%sError:%s %s\n\nPress Enter to close.' "$red$bold" "$reset" "$*"
@@ -41,11 +48,68 @@ if [ "$chip" = arm64 ]; then
 fi
 echo
 
-# --- 1. The newest Ollie OS --------------------------------------------------------
-echo "==> Finding the newest Ollie OS"
-json="$(curl -fsSL "$API")" || die "could not reach GitHub. Is the internet connected?"
-# One line per file: SIZE<TAB>NAME<TAB>URL (the ISO, or its parts, and its checksum).
-list="$(osascript -l JavaScript -e '
+fsize() { wc -c <"$1" 2>/dev/null | tr -d ' '; }
+# A real Ollie OS ISO: big enough, and "CD001" where every ISO has it (so a
+# half download or some other file is not taken for one).
+iso_ok() { # iso_ok FILE
+    [ -f "$1" ] || return 1
+    [ "$(fsize "$1")" -ge "$min_iso" ] 2>/dev/null || return 1
+    [ "$(tail -c +32770 "$1" 2>/dev/null | head -c 5)" = CD001 ]
+}
+
+# --- 1. Ollie OS: in Downloads already? else the newest on GitHub ----------------------
+# The newest Ollie OS in Downloads: a whole ISO file (ollie-os-...iso), or all the
+# parts of one (ollie-os-...iso.part0, .part1 ...).
+local_files=() local_name="" local_size=0 local_sumfile=""
+while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    if iso_ok "$f"; then
+        local_files=("$f") local_name="${f##*/}" local_size="$(fsize "$f")" local_sumfile="$f.sha256"
+        break
+    fi
+done < <(ls -t "$dl"/ollie-os-*.iso 2>/dev/null)
+if [ "${#local_files[@]}" -eq 0 ]; then
+    while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        base="${f%.part0}" i=0 total=0 plist=() first_size="$(fsize "$f")" last_size=0
+        while [ -f "$base.part$i" ]; do
+            plist+=("$base.part$i")
+            last_size="$(fsize "$base.part$i")"
+            total=$((total + last_size))
+            i=$((i + 1))
+        done
+        # All the parts: every part but the last is the same size, and the last is smaller.
+        [ "$last_size" -lt "$first_size" ] 2>/dev/null || continue
+        [ "$total" -ge "$min_iso" ] || continue
+        [ "$(tail -c +32770 "$f" 2>/dev/null | head -c 5)" = CD001 ] || continue
+        local_files=("${plist[@]}") local_name="${base##*/}" local_size="$total" local_sumfile="$base.sha256"
+        break
+    done < <(ls -t "$dl"/ollie-os-*.iso.part0 2>/dev/null)
+fi
+
+# GitHub's answer, one line per file: SIZE<TAB>NAME<TAB>URL (the ISO or its
+# parts, and its checksum).
+pick_files() { # pick_files: GitHub's JSON on stdin, no osascript: the first release that has an ISO
+    # (GitHub's answer has one key per line.)
+    awk -F'"' '
+        $2 == "name" {n = $4}
+        $2 == "size" {s = $3; gsub(/[^0-9]/, "", s)}
+        $2 == "browser_download_url" && (n ~ /\.iso$/ || n ~ /\.iso\.part[0-9]+$/ || n ~ /\.iso\.sha256$/) {
+            t = $4; sub(/.*\/download\//, "", t); sub(/\/.*/, "", t)
+            if (n !~ /\.sha256$/ && first == "") first = t
+            k++; rt[k] = t; rs[k] = s; rn[k] = n; ru[k] = $4
+        }
+        END {for (i = 1; i <= k; i++) if (rt[i] == first) print rs[i] "\t" rn[i] "\t" ru[i]}'
+}
+isos="" sumline="" size=0 reached=""
+fetch_release() { # fetch_release: sets isos, sumline, size; fails if no release has an ISO
+    local url json list s n u
+    for url in "$API" "$LIST_API"; do
+        json="$(curl -fsSL --max-time 30 "$url" 2>/dev/null)" || continue
+        reached=1
+        list=""
+        if [ "$url" = "$API" ]; then
+            list="$(osascript -l JavaScript -e '
 function run(argv) {
   const a = JSON.parse(argv[0]).assets;
   const iso = a.filter(x => /\.iso$/.test(x.name));
@@ -55,23 +119,65 @@ function run(argv) {
   return (iso.length ? iso : parts).concat(sum)
     .map(x => x.size + "\t" + x.name + "\t" + x.browser_download_url).join("\n");
 }' "$json" 2>/dev/null)"
-if [ -z "$list" ]; then
-    # (Without osascript's help: GitHub's answer has one key per line.)
-    list="$(printf '%s\n' "$json" | awk -F'"' '
-        $2 == "name" {n = $4}
-        $2 == "size" {s = $3; gsub(/[^0-9]/, "", s)}
-        $2 == "browser_download_url" && (n ~ /\.iso$/ || n ~ /\.iso\.part[0-9]+$/ || n ~ /\.iso\.sha256$/) {print s "\t" n "\t" $4}')"
+        fi
+        [ -n "$list" ] || list="$(printf '%s\n' "$json" | pick_files)"
+        isos="" sumline="" size=0
+        while IFS=$'\t' read -r s n u; do
+            [ -n "$n" ] || continue
+            case "$n" in
+            *.sha256) sumline="$n"$'\t'"$u" ;;
+            *) isos="$isos$n"$'\t'"$u"$'\t'"$s"$'\n'; size=$((size + s)) ;;
+            esac
+        done <<<"$list"
+        [ -n "$isos" ] && return 0
+    done
+    return 1
+}
+
+use_local="" keep="" fetched=""
+if [ "${#local_files[@]}" -gt 0 ]; then
+    echo "==> Ollie OS is already in Downloads: $local_name ($((local_size / 1000000)) MB)"
+    echo "  Checking it (about a minute)..."
+    have="$(cat "${local_files[@]}" | shasum -a 256 | awk '{print $1}')"
+    own=""
+    [ -f "$local_sumfile" ] && own="$(awk '{print tolower($1)}' "$local_sumfile" 2>/dev/null | head -n 1)"
+    if [ -n "$own" ] && [ "$have" != "$own" ]; then
+        echo "  It does not match its checksum file (${local_sumfile##*/}): it is damaged or not whole."
+        echo "  It is not used (and not deleted)."
+        local_files=()
+    elif fetch_release; then
+        fetched=1
+        want=""
+        [ -n "$sumline" ] && want="$(curl -fsSL --max-time 30 "${sumline#*$'\t'}" 2>/dev/null | awk '{print tolower($1)}')"
+        if [ -z "$want" ]; then
+            echo "  (It could not be compared with the newest one, so it is used as it is.)"
+            use_local=1
+        elif [ "$have" = "$want" ]; then
+            echo "  Right: it is the newest Ollie OS. No download needed."
+            use_local=1
+        else
+            echo "  The newest Ollie OS on GitHub is a different one: this one may be older."
+            read -rp "  Use the one in Downloads? [Y/n] (n: download the newest) " answer
+            case "$answer" in n* | N*) ;; *) use_local=1 ;; esac
+        fi
+    else
+        echo "  (GitHub could not be asked, so it is used as it is.)"
+        use_local=1
+    fi
 fi
-isos="" sumline="" size=0
-while IFS=$'\t' read -r s n u; do
-    [ -n "$n" ] || continue
-    case "$n" in
-    *.sha256) sumline="$n"$'\t'"$u" ;;
-    *) isos="$isos$n"$'\t'"$u"$'\t'"$s"$'\n'; size=$((size + s)) ;;
-    esac
-done <<<"$list"
-[ -n "$isos" ] || die "the newest Ollie OS release has no ISO in it yet. Try again in a few minutes."
-echo "  Ollie OS: $((size / 1000000)) MB"
+if [ -n "$use_local" ]; then
+    files=("${local_files[@]}")
+    size="$local_size"
+else
+    echo "==> Finding the newest Ollie OS"
+    if [ -z "$fetched" ] && ! fetch_release; then
+        if [ -z "$reached" ]; then
+            die "could not reach GitHub. Is the internet connected? (Or put the Ollie OS .iso file in your Downloads folder first: this looks there.)"
+        fi
+        die "no Ollie OS file was found on GitHub yet (a new one is made about an hour after each change). Try again later."
+    fi
+    echo "  Ollie OS: $((size / 1000000)) MB"
+fi
 
 # --- 2. Which drive ------------------------------------------------------------------
 echo
@@ -128,36 +234,58 @@ Nothing was changed."
 fi
 echo "  OK."
 
-# --- 4. Download (to this Mac first, checked, then written) --------------------------
-echo
-echo "==> Room on this Mac for the download"
-free_kb="$(df -Pk "$tmp" | awk 'NR == 2 {print $4}')"
-need_kb=$((size / 1024 + 300000))
-[ "${free_kb:-0}" -ge "$need_kb" ] || die "not enough free room on this Mac: the download needs $((need_kb / 1024)) MB, $((${free_kb:-0} / 1024)) MB is free."
-echo "  OK."
-echo
-echo "==> Downloading Ollie OS (a few minutes to half an hour; if it stops, run this again: it carries on)"
-files=()
-while IFS=$'\t' read -r n u s; do
-    [ -n "$n" ] || continue
-    echo "  $n"
-    have_size="$(wc -c <"$tmp/$n" 2>/dev/null | tr -d ' ')"
-    [ "${have_size:-0}" -le "$s" ] || rm -f "$tmp/$n"
-    if [ "$(wc -c <"$tmp/$n" 2>/dev/null | tr -d ' ')" != "$s" ]; then
-        curl -fL --retry 5 --retry-delay 3 -C - -o "$tmp/$n" "$u" || die "the download stopped. Run this again: it carries on where it stopped."
+# --- 4. Download (not needed when Ollie OS was in Downloads) ---------------------------
+if [ -z "$use_local" ]; then
+    # It goes into Downloads and stays there (found there next time); in this
+    # Mac's temporary folder if Terminal may not use Downloads.
+    dldir="$dl"
+    if mkdir -p "$dldir" 2>/dev/null && : >"$dldir/.ollie-os-test" 2>/dev/null; then
+        rm -f "$dldir/.ollie-os-test"
+        keep=1
+    else
+        dldir="$tmp"
     fi
-    [ "$(wc -c <"$tmp/$n" | tr -d ' ')" = "$s" ] || die "$n is not the right size: the download was cut short. Run this again."
-    files+=("$tmp/$n")
-done <<<"$isos"
-if [ -n "$sumline" ]; then
-    echo "==> Checking the download"
-    want="$(curl -fsSL "${sumline#*$'\t'}" | awk '{print tolower($1)}')"
-    have="$(cat "${files[@]}" | shasum -a 256 | awk '{print $1}')"
-    if [ -n "$want" ] && [ "$have" != "$want" ]; then
-        rm -f "${files[@]}"
-        die "the download was damaged on the way (checksum). It was removed: run this again."
+    echo
+    echo "==> Room on this Mac for the download"
+    free_kb="$(df -Pk "$dldir" | awk 'NR == 2 {print $4}')"
+    need_kb=$((size / 1024 + 300000))
+    [ "${free_kb:-0}" -ge "$need_kb" ] || die "not enough free room on this Mac: the download needs $((need_kb / 1024)) MB, $((${free_kb:-0} / 1024)) MB is free."
+    echo "  OK."
+    echo
+    echo "==> Downloading Ollie OS into $dldir (a few minutes to half an hour; if it stops, run this again: it carries on)"
+    files=()
+    while IFS=$'\t' read -r n u s; do
+        [ -n "$n" ] || continue
+        echo "  $n"
+        part="$dldir/$n.part"
+        have_size="$(fsize "$part")"
+        [ "${have_size:-0}" -le "$s" ] || rm -f "$part"
+        if [ "$(fsize "$part")" != "$s" ]; then
+            curl -fL --retry 5 --retry-delay 3 -C - -o "$part" "$u" || die "the download stopped. Run this again: it carries on where it stopped."
+        fi
+        [ "$(fsize "$part")" = "$s" ] || die "$n is not the right size: the download was cut short. Run this again."
+        files+=("$part")
+    done <<<"$isos"
+    if [ -n "$sumline" ]; then
+        echo "==> Checking the download"
+        want="$(curl -fsSL "${sumline#*$'\t'}" | awk '{print tolower($1)}')"
+        have="$(cat "${files[@]}" | shasum -a 256 | awk '{print $1}')"
+        if [ -n "$want" ] && [ "$have" != "$want" ]; then
+            rm -f "${files[@]}"
+            die "the download was damaged on the way (checksum). It was removed: run this again."
+        fi
+        echo "  Right."
     fi
-    echo "  Right."
+    # Whole and checked: now they get their real names (so a half download is never taken for Ollie OS).
+    whole=()
+    for f in "${files[@]}"; do
+        mv -f "$f" "${f%.part}" && whole+=("${f%.part}")
+    done
+    files=("${whole[@]}")
+    if [ -n "$keep" ] && [ -n "$want" ]; then
+        isoname="${sumline%%$'\t'*}"
+        printf '%s  %s\n' "$want" "${isoname%.sha256}" >"$dldir/$isoname"
+    fi
 fi
 
 # --- 5. Write ---------------------------------------------------------------------------
@@ -196,6 +324,10 @@ sync
 diskutil eject "$disk" >/dev/null 2>&1
 rm -rf "${tmp:?}"
 printf '\n%s  Done: Ollie OS is on the USB drive, and checked.%s\n' "$green$bold" "$reset"
+if [ -n "$use_local" ] || [ -n "$keep" ]; then
+    echo "  The Ollie OS file stays in your Downloads folder: next time this finds it there and"
+    echo "  needs no download. (Delete it if you want the room back.)"
+fi
 cat <<'MSG'
 
   Take the USB drive out and start the computer from it:
