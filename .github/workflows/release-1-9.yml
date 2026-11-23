@@ -1,0 +1,47 @@
+name: Make the Ollie OS 1.9 release
+
+# One time: makes the release "Ollie OS 1.9" (tag ollieosv1.9, at the commit of
+# the tested build on "Ollie OS (newest)") with the Linux, Mac and Windows
+# installers, the Linux updater and the ISO, and puts the new Mac installer on
+# the release called 1.8 too. Runs when .github/release-1-9.txt is pushed.
+on:
+  push:
+    branches: ["claude/fervent-gates-cs7smv"]
+    paths: [".github/release-1-9.txt"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Make it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          want="$(sed -n 's/^build=//p' .github/release-1-9.txt)"
+          have="$(gh release view ollie-os-newest --json targetCommitish -q .targetCommitish)"
+          [ "$have" = "$want" ] || { echo "Ollie OS (newest) is build $have, not $want"; exit 1; }
+          mkdir -p rel
+          gh release download ollie-os-newest -D rel \
+            -p 'ollie-os-*.iso' -p 'ollie-os-*.iso.part*' -p 'ollie-os-*.iso.sha256' \
+            -p 'Ollie-OS-Installer-x86_64.AppImage' -p 'Ollie-OS-Installer-Windows.exe' \
+            -p 'Ollie-OS-Installer-Mac.dmg' -p 'Ollie-OS-Installer-Mac.zip'
+          cp downloads/Ollie-OS-Latest-Updater-x86_64.AppImage rel/
+          ls -la rel
+          for f in Ollie-OS-Installer-x86_64.AppImage Ollie-OS-Installer-Windows.exe Ollie-OS-Installer-Mac.dmg Ollie-OS-Installer-Mac.zip Ollie-OS-Latest-Updater-x86_64.AppImage; do
+            test -s "rel/$f"
+          done
+          ls rel/*.sha256 >/dev/null
+          if gh release view ollieosv1.9 >/dev/null 2>&1; then
+            gh release upload ollieosv1.9 rel/* --clobber
+            gh release edit ollieosv1.9 --notes-file .github/release-1-9-notes.md
+          else
+            gh release create ollieosv1.9 --target "$want" --title "Ollie OS 1.9" \
+              --notes-file .github/release-1-9-notes.md rel/*
+          fi
+          gh release upload ollie-update-20261120-1800 rel/Ollie-OS-Installer-Mac.dmg rel/Ollie-OS-Installer-Mac.zip --clobber
+          gh release view ollieosv1.9 --json name,tagName,assets -q '.name + " (" + .tagName + "): " + ([.assets[].name] | join(", "))'
