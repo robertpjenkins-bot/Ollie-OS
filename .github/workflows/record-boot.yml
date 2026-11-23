@@ -34,12 +34,15 @@ jobs:
           t=""
           for _ in $(seq 180); do
             t="$(gh release view ollie-os-newest --json targetCommitish -q .targetCommitish 2>/dev/null || true)"
-            [ "$t" = "$want" ] && break
+            # (its files go up after the release is made: wait for the checksum, the last of the ISO's)
+            n="$(gh release view ollie-os-newest --json assets -q '[.assets[].name | select(endswith(".iso.sha256"))] | length' 2>/dev/null || echo 0)"
+            [ "$t" = "$want" ] && [ "${n:-0}" -ge 1 ] && sleep 60 && break
             sleep 30
           done
           [ "$t" = "$want" ] || { echo "the build $want did not reach the release"; exit 1; }
           mkdir -p iso
-          gh release download ollie-os-newest -D iso -p 'ollie-os-*.iso' -p 'ollie-os-*.iso.part*'
+          gh release download ollie-os-newest -D iso -p 'ollie-os-*.iso*'
+          rm -f iso/*.sha256
           cd iso
           if ls ./*.iso.part0 >/dev/null 2>&1; then
             p="$(ls ./*.iso.part0)"
