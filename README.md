@@ -1,6 +1,8 @@
 ![Ollie OS 1.9](docs/ollie-os-banner.png)
 
 # Oliver DEMO AVAILABLE
+🌐 **Website: https://robertpjenkins-bot.github.io/Ollie-OS/** · Downloads: [Ollie OS 1.9](https://github.com/robertpjenkins-bot/Ollie-OS/releases/tag/ollieosv1.9)
+
 Ollie OS was dreamed up, designed and tested by an 8-year-old, built with help from AI (Claude). Great for gaming: comes with Wine, Steam and more, plus a debugger and a driver installer. Easy to install KID FREINDLY WITH UPDATE VERSION 1.3
 <img width="3840" height="2160" alt="desktop" src="https://github.com/user-attachments/assets/8be2fca1-2326-47d3-b7bb-0ab0e0dc5587" />
 

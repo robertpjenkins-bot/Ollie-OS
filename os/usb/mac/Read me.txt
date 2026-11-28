@@ -4,6 +4,9 @@ This makes a USB drive that starts Ollie OS on a Steam Deck, a Steam Machine,
 a Dell or other PC, or an Intel Mac. A Mac with an Apple chip can make the
 drive, but it cannot start Ollie OS itself.
 
+Website: https://robertpjenkins-bot.github.io/Ollie-OS/
+All versions: https://github.com/robertpjenkins-bot/Ollie-OS/releases
+
 THE EASY WAY (nothing for macOS to block)
   Open Terminal (press Command + Space, type Terminal, press Return), paste this
   one line, and press Return:
