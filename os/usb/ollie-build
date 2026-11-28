@@ -68,6 +68,10 @@ fi
 # Uses $dest (the folder) and $name (the ISO's file name).
 onto_a_drive() {
     if $mac; then
+        # The USB Writer next to it (Mac Installer 2.0): it writes this ISO, no download.
+        if [ -f "$here/Ollie OS USB Writer.command" ]; then
+            OLLIE_MAC_LOCAL_ONLY=1 OLLIE_MAC_DOWNLOADS="$dest" exec bash "$here/Ollie OS USB Writer.command"
+        fi
         setup="$(ls "$here"/Ollie-OS-Mac-Setup.command 2>/dev/null | head -n 1)"
         if [ -n "$setup" ]; then
             while :; do
@@ -177,14 +181,15 @@ done
 
 # --- 2. How to build ---------------------------------------------------------------------
 work="${OLLIE_BUILD_DIR:-$HOME/Ollie-OS-Builder}"
-engine=() kind=docker rootless=""
+engine=() engine_platform=() kind=docker rootless=""
 chroot_tools=true
 for tool in curl unshare chroot sha256sum; do have "$tool" || chroot_tools=false; done
 [ -n "$(tool_path unsquashfs)" ] && { have bsdtar || [ -n "$(tool_path xorriso)" ]; } || chroot_tools=false
 if $mac; then
     if [ "$(uname -m)" != x86_64 ]; then
-        echo "  (This Mac has an Apple chip: the build runs emulated, takes much longer, and may not work.)"
-        echo "  (Quicker: Ollie OS Installer.command makes the USB drive from the ready-made Ollie OS in a few minutes.)"
+        echo "  (This Mac has an Apple chip: Docker runs the build emulated, which takes several hours."
+        echo "  Leave the Mac on and plugged in. Docker Desktop: Settings, General, turn on Rosetta.)"
+        engine_platform=(--platform linux/amd64)
     fi
     have docker || die "Docker is not installed. Install Docker Desktop from docker.com (or OrbStack), open it once so it is running, then run this again."
     docker info >/dev/null 2>&1 || die "Docker is installed but not running. Open Docker Desktop (whale icon at the top of the screen), wait until it says running, then run this again."
@@ -388,7 +393,7 @@ userns | sudo)
     else
         echo "  The build downloads it (about 1.4 GB)."
     fi
-    "${engine[@]}" run --rm --privileged ${rootless:+-e OLLIE_ROOTLESS=1} ${found_args[@]+"${found_args[@]}"} -v "$src:/src" -w /src \
+    "${engine[@]}" run --rm --privileged ${engine_platform[@]+"${engine_platform[@]}"} ${rootless:+-e OLLIE_ROOTLESS=1} ${found_args[@]+"${found_args[@]}"} -v "$src:/src" -w /src \
         docker.io/library/archlinux:latest bash os/build-from-arch-iso.sh /var/tmp/ollie-from-iso >"$work/build.log" 2>&1 &
     ;;
 esac

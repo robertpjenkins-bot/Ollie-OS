@@ -419,6 +419,18 @@ check "the drive has the ISO" cmp -s "$work/iso" "$work/rdisk4.img"
 check "nothing is left in the temporary folder" test ! -e "$work/tmp"
 check "it does not say the file stays in Downloads" bash -c "! grep -q 'stays in your Downloads folder' '$work/out.txt'"
 
+say "handed over by the Mac Installer (only the ISO in Downloads, no GitHub)"
+single
+cp "$work/iso" "$work/dl/$iso_name"
+OLLIE_MAC_LOCAL_ONLY=1 run 1 ERASE
+check "the drive has the ISO" cmp -s "$work/iso" "$work/rdisk4.img"
+check "GitHub was not asked" bash -c "! grep -q 'api.json\|list.json\|api.github' '$work/curl.log' 2>/dev/null"
+
+say "handed over, but no ISO in Downloads: it says so"
+single
+OLLIE_MAC_LOCAL_ONLY=1 run 1 ERASE
+check "it says there is no ISO" grep -q 'there is no good Ollie OS ISO' "$work/out.txt"
+
 say "the script has no bash 4 things (macOS has bash 3.2)"
 check "no mapfile / readarray" bash -c "! grep -v '^[[:space:]]*#' '$script' | grep -nE '(^|[^a-z_])(mapfile|readarray)([^a-z_]|\$)'"
 check "no lowercase/uppercase expansions" bash -c "! grep -v '^[[:space:]]*#' '$script' | grep -nE '\\\$\\{[a-zA-Z_]+(,,|\\^\\^)'"

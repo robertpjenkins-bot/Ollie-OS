@@ -7,13 +7,21 @@ drive, but it cannot start Ollie OS itself.
 Website: https://robertpjenkins-bot.github.io/Ollie-OS/
 All versions: https://github.com/robertpjenkins-bot/Ollie-OS/releases
 
-THE EASY WAY (nothing for macOS to block)
-  Open Terminal (press Command + Space, type Terminal, press Return), paste this
-  one line, and press Return:
+HOW IT WORKS (the same as the Linux and Windows installers)
+  1. It looks in your Downloads folder for Ollie OS (ollie-os-...iso) first. If it
+     is there, it goes straight to step 3.
+  2. Otherwise it builds a brand-new Ollie OS on this Mac: it downloads the
+     official Arch Linux and turns it into Ollie OS. This needs Docker Desktop
+     (free, docker.com): install it and open it once before you start.
+       Intel Mac: 1 to 2 hours.
+       Apple chip (M1 to M4): several hours (Docker runs it emulated). In Docker
+       Desktop, Settings > General, turn on "Use Rosetta". Leave the Mac on and
+       plugged in. About 20 GB of free space is needed.
+     The new Ollie OS goes into Downloads (and is found there next time).
+  3. The USB Writer puts it on a USB drive (8 GB or more; EVERYTHING ON IT IS
+     ERASED): pick the drive, type ERASE, and type this Mac's password.
 
-  bash <(curl -fsSL https://raw.githubusercontent.com/robertpjenkins-bot/Ollie-OS/claude/fervent-gates-cs7smv/os/usb/mac/ollie-mac-install.sh)
-
-OR DOUBLE-CLICK
+START IT
   Double-click "Ollie OS Installer.command". macOS may say it "can't be opened"
   or "Apple could not verify" it, because it is not from the App Store. Then:
     1. Click Done (not Move to Bin).
@@ -22,34 +30,26 @@ OR DOUBLE-CLICK
        Open Anyway, then type this Mac's password.
     4. Double-click it again and click Open.
   (macOS 14 and older: right-click it and choose Open instead.)
+  macOS may ask whether Terminal may use the Downloads folder: click Allow.
+  If macOS blocks writing to the drive: System Settings > Privacy & Security >
+  Full Disk Access, turn on Terminal, quit Terminal (Command + Q), run it again.
 
-OLLIE OS ALREADY IN DOWNLOADS?
-  This looks in your Downloads folder for the Ollie OS file (ollie-os-...iso) first.
-  If it is there, there is no second download: it is checked and written to the
-  drive. When it does download, the file stays in Downloads for next time. (macOS
-  may ask whether Terminal may use the Downloads folder: click Allow.)
+QUICKER, NO BUILD (downloads a ready-made Ollie OS, about 2 GB, 10 to 30 minutes)
+  Double-click "Ollie OS USB Writer.command", or open Terminal and paste:
 
-WHAT HAPPENS
-  1. Plug in a USB drive (8 GB or more). EVERYTHING ON IT IS ERASED.
-  2. Pick the drive, type ERASE, and type this Mac's password when it asks
-     (macOS needs it to write to a drive).
-  3. It checks that macOS lets Terminal write to the drive. If it says macOS
-     is blocking it: System Settings > Privacy & Security > Full Disk Access,
-     turn on Terminal, quit Terminal (Command + Q), open it again, run it again.
-  4. It uses the Ollie OS file in Downloads, or downloads it (about 2 GB), checks it,
-     and writes it to the drive. If the internet stops, run it again: it carries on.
-  5. Take the drive to the other computer and start from it:
-       Steam Deck:     hold Volume Down, press Power, pick the USB drive.
-       Steam Machine:  hold Volume Down.
-       Dell and most PCs: tap F12.
-       Intel Mac:      hold Option and pick "EFI Boot".
-     Then press Install Ollie OS.
-  6. PCs with Secure Boot on: the first time, a blue screen says "Verification
-     failed". Press Enter, then any key quickly, then pick Enroll key from disk,
-     OLLIE_OS, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.
-  7. A PC with Windows: write down its BitLocker recovery key first
-     (aka.ms/myrecoverykey). Windows may ask for it after starting from a USB.
-     Don't turn Secure Boot off: that makes Windows ask for it for sure.
+  bash <(curl -fsSL https://raw.githubusercontent.com/robertpjenkins-bot/Ollie-OS/claude/fervent-gates-cs7smv/os/usb/mac/ollie-mac-install.sh)
+
+STARTING FROM THE DRIVE
+  Steam Deck:     hold Volume Down, press Power, pick the USB drive.
+  Steam Machine:  hold Volume Down.
+  Dell and most PCs: tap F12.
+  Intel Mac:      hold Option and pick "EFI Boot".
+  Then press Install Ollie OS.
+  PCs with Secure Boot on: the first time, a blue screen says "Verification
+  failed". Press Enter, then any key quickly, then pick Enroll key from disk,
+  OLLIE_OS, OLLIE-OS-KEY.cer, Continue, Yes, Reboot. Only once on each computer.
+  A PC with Windows: write down its BitLocker recovery key first
+  (aka.ms/myrecoverykey). Windows may ask for it after starting from a USB.
 
 If the Mac says "The disk you inserted was not readable by this computer" when
 the drive is done, click Eject: that is Ollie OS, which a Mac cannot read.

@@ -145,6 +145,9 @@ if [ "${#local_files[@]}" -gt 0 ]; then
         echo "  It does not match its checksum file (${local_sumfile##*/}): it is damaged or not whole."
         echo "  It is not used (and not deleted)."
         local_files=()
+    elif [ -n "${OLLIE_MAC_LOCAL_ONLY:-}" ]; then
+        echo "  Right."
+        use_local=1
     elif fetch_release; then
         fetched=1
         want=""
@@ -169,6 +172,7 @@ if [ -n "$use_local" ]; then
     files=("${local_files[@]}")
     size="$local_size"
 else
+    [ -z "${OLLIE_MAC_LOCAL_ONLY:-}" ] || die "there is no good Ollie OS ISO in $dl."
     echo "==> Finding the newest Ollie OS"
     if [ -z "$fetched" ] && ! fetch_release; then
         if [ -z "$reached" ]; then

@@ -480,17 +480,19 @@ APPRUN
 }
 build_builder
 
-# The Mac Installer (not the Builder: that one needs Docker and an Intel Mac).
-# It runs on any Mac, Apple Silicon (M1 to M4) too, with only what macOS has:
-# it downloads the ready-made Ollie OS from the newest release and writes it to
-# a USB drive. As a .dmg (opens on a Mac like a drive) and as a .zip (opens by
-# double-clicking, for when the .dmg will not). The same script is the Terminal
-# one-liner on the website (nothing for macOS's Gatekeeper to block).
+# The Mac Installer works like the Linux one (2.0): Ollie OS already in
+# Downloads is used; otherwise it builds Ollie OS from the official Arch Linux
+# ISO (the Builder, in Docker), then writes it to a USB drive with the USB
+# Writer (only what macOS has; any Mac, Apple chip too). As a .dmg (opens on a
+# Mac like a drive) and as a .zip. The USB Writer alone is also the Terminal
+# one-liner on the website (it downloads a ready-made Ollie OS instead).
 build_mac_installer() {
     local dir="$out/Ollie-OS-Installer-Mac"
     rm -rf "${dir:?}"
     mkdir -p "$dir"
-    install -m 0755 "$here/mac/ollie-mac-install.sh" "$dir/Ollie OS Installer.command"
+    install -m 0755 "$here/ollie-build" "$dir/Ollie OS Installer.command"
+    install -m 0755 "$here/mac/ollie-mac-install.sh" "$dir/Ollie OS USB Writer.command"
+    source_tarball "$dir/ollie-os-source.tar.gz"
     install -m 0644 "$here/mac/Read me.txt" "$dir/Read me.txt"
     rm -f "$out/Ollie-OS-Installer-Mac.zip"
     (cd "$out" && zip -q -r -X Ollie-OS-Installer-Mac.zip "$(basename "$dir")")
